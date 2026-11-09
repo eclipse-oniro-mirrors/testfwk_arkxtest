@@ -2147,6 +2147,82 @@ static void RegisterExtensionHandler()
     server.AddHandler("Driver.OpenAamsEvent", genericOpenAamsEventHandler);
 }
 
+    /** Checks whether the center point of a component is reachable (not occluded by higher z-index). */
+    static void ComponentIsReachableHandler(const ApiCallInfo &in, ApiReplyInfo &out)
+    {
+        auto &image = GetBackendObject<Widget>(in.callerObjRef_);
+        auto &driver = GetBoundUiDriver(in.callerObjRef_);
+
+        // 1. Retrieve latest widget snapshot (throws 17000004 if gone, spec R-3)
+        auto snapshot = driver.RetrieveWidget(image, out.exception_);
+        if (out.exception_.code_ != NO_ERROR) {
+            out.resultValue_ = nullptr;
+            return;
+        }
+
+        // 2. visible=false → false (spec R-7)
+        if (!snapshot->IsVisible()) {
+            out.resultValue_ = false;
+            return;
+        }
+
+        // 3. zero-area bounds → false (spec R-8)
+        auto bounds = snapshot->GetBounds();
+        if (bounds.GetArea() == 0) {
+            out.resultValue_ = false;
+            return;
+        }
+
+        // 4. Compute center point
+        Point center(bounds.GetCenterX(), bounds.GetCenterY());
+
+        // 5. Get own z-index
+        int32_t myZIndex = 0;
+        try {
+            myZIndex = std::stoi(snapshot->GetAttr(UiAttr::ZINDEX));
+        } catch (...) {
+            myZIndex = 0;
+        }
+
+        // 6. Get all visible widgets (for occlusion check)
+        WidgetSelector selector(true); // addVisibleMatcher = true
+        selector.SetWantMulti(true);
+        vector<unique_ptr<Widget>> allWidgets;
+        driver.FindWidgets(selector, allWidgets, out.exception_, true, true);
+        if (out.exception_.code_ != NO_ERROR) {
+            out.resultValue_ = nullptr;
+            return;
+        }
+
+        // 7. Check occlusion: any visible widget with higher z-index covering center (spec R-1/R-2/R-6)
+        for (auto &other : allWidgets) {
+            if (other.get() == snapshot) {
+                continue;
+            }
+            if (!other->IsVisible()) {
+                continue; // invisible cannot occlude
+            }
+
+            int32_t otherZIndex = 0;
+            try {
+                otherZIndex = std::stoi(other->GetAttr(UiAttr::ZINDEX));
+            } catch (...) {
+                continue;
+            }
+            if (otherZIndex <= myZIndex) {
+                continue; // only higher z-index matters (spec R-2)
+            }
+
+            if (RectAlgorithm::IsInnerPoint(other->GetBounds(), center)) {
+                out.resultValue_ = false;
+                return;
+            }
+        }
+
+        // 8. Not occluded
+        out.resultValue_ = true;
+    }
+
     static void RegisterUiComponentAttrGetters()
     {
         auto &server = FrontendApiServer::Get();
@@ -2168,6 +2244,7 @@ static void RegisterExtensionHandler()
         server.AddHandler("Component.getBoundsCenter", GenericComponentAttrGetter<UiAttr::BOUNDSCENTER>);
         server.AddHandler("Component.getDisplayId", GenericComponentAttrGetter<UiAttr::DISPLAY_ID>);
         server.AddHandler("Component.getOriginalText", GenericComponentAttrGetter<UiAttr::ORIGINALTEXT, true>);
+        server.AddHandler("Component.isReachable", ComponentIsReachableHandler);
     }
 
     static void RegisterUiComponentClickOperation()
