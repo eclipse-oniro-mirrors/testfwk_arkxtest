@@ -41,6 +41,8 @@ namespace OHOS::uitest {
         int parentIndex = -1;
         std::vector<int> childIndexVec;
         bool clip = false;
+        int32_t zIndex = 0;
+        int visibleOverride = -1; // -1: derive from bounds; 0/1: explicit visible value
     };
 
     static void StringSplit(const string &str, const char split, std::vector<string> &res)
@@ -100,6 +102,12 @@ namespace OHOS::uitest {
         }
         if (obj.find("clip") != obj.end()) {
             eleRoot.clip = (obj["clip"] == "true");
+        }
+        if (obj.find("zIndex") != obj.end()) {
+            eleRoot.zIndex = std::stoi(obj["zIndex"].get<std::string>());
+        }
+        if (obj.find("visible") != obj.end()) {
+            eleRoot.visibleOverride = (obj["visible"] == "true") ? 1 : 0;
         }
         if (obj.find("rectInScreen") != obj.end()) {
             // 12,12,12,12
@@ -253,8 +261,13 @@ namespace OHOS::uitest {
             widget.SetAttr(UiAttr::HOST_WINDOW_ID, element.windowId);
             widget.SetAttr(UiAttr::ORIGBOUNDS, boundStream.str());
             widget.SetAttr(UiAttr::HASHCODE, GenerateNodeHashCode(element));
-            widget.SetAttr(UiAttr::VISIBLE,
-                           nodeOriginRect.GetHeight() > 0 && nodeOriginRect.GetWidth() > 0 ? "true" : "false");
+            widget.SetAttr(UiAttr::ZINDEX, std::to_string(element.zIndex));
+            if (element.visibleOverride >= 0) {
+                widget.SetAttr(UiAttr::VISIBLE, element.visibleOverride == 1 ? "true" : "false");
+            } else {
+                widget.SetAttr(UiAttr::VISIBLE,
+                               nodeOriginRect.GetHeight() > 0 && nodeOriginRect.GetWidth() > 0 ? "true" : "false");
+            }
         }
         void WrapperElement(Widget &widget) override
         {

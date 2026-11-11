@@ -22,6 +22,8 @@
 #include "frontend_api_handler.h"
 #undef private
 #include "dummy_controller.h"
+#include "mock_element_node_iterator.h"
+#include "mock_controller.h"
 #include "widget_selector.h"
 #include "ui_driver.h"
 
@@ -287,7 +289,7 @@ TEST_F(FrontendApiHandlerTest, callApiE2E)
     ASSERT_NE(ref0, ref1);
 
     // should always return a new By
-    auto call2 = ApiCallInfo {.apiId_ = "Driver.create", .callerObjRef_ = string()};
+    auto call2 = ApiCallInfo {.apiId_ = "UiDriver.create", .callerObjRef_ = string()};
     auto reply2 = ApiReplyInfo();
     server.Call(call2, reply2);
     ASSERT_EQ(NO_ERROR, reply2.exception_.code_);
@@ -1615,138 +1617,409 @@ TEST_F(FrontendApiHandlerTest, MouseDragNewInterfaceWithoutOptions)
 
 // ==================== Component.isReachable tests (spec FEAT-TESTFWK-2026-003) ====================
 
-/** Helper: create a Widget with given bounds, zIndex, visible and register it as backend object. */
-static string CreateAndStoreWidget(Rect bounds, int zIndex, bool visible, int displayId = 0)
+/**
+ * Fixture for isReachable tests: registers a MockController so the real API chain
+ * (Driver.create -> On.text -> Driver.findComponent -> Component.isReachable)
+ * runs against a controllable widget tree built from json descriptions.
+ */
+class FrontendApiHandlerIsReachableTest : public testing::Test {
+public:
+    ~FrontendApiHandlerIsReachableTest() override = default;
+protected:
+    void SetUp() override
+    {
+        auto mockController = make_unique<MockController>();
+        controller_ = mockController.get();
+        UiDriver::RegisterController(move(mockController));
+    }
+
+    void TearDown() override
+    {
+        controller_ = nullptr;
+    }
+
+    /** Register a window with the given widget-tree json, then run the real API chain
+     *  and deliver the isReachable reply. */
+    void CallIsReachable(const Window &win, const string &treeJson, const string &content, ApiReplyInfo &reply)
+    {
+        auto eles = MockElementNodeIterator::ConstructIteratorByJson(treeJson)->elementInfoLists_;
+        controller_->AddWindowsAndNode(win, eles);
+        const auto &server = FrontendApiServer::Get();
+        // create driver
+        auto call0 = ApiCallInfo {.apiId_ = "Driver.create", .callerObjRef_ = string()};
+        auto reply0 = ApiReplyInfo();
+        server.Call(call0, reply0);
+        ASSERT_EQ(NO_ERROR, reply0.exception_.code_);
+        const auto driverRef = reply0.resultValue_.get<string>();
+        // build selector by content
+        auto call1 = ApiCallInfo {.apiId_ = "On.text", .callerObjRef_ = string(REF_SEED_ON)};
+        call1.paramList_.emplace_back(content);
+        auto reply1 = ApiReplyInfo();
+        server.Call(call1, reply1);
+        ASSERT_EQ(NO_ERROR, reply1.exception_.code_);
+        const auto onRef = reply1.resultValue_.get<string>();
+        // find the component
+        auto call2 = ApiCallInfo {.apiId_ = "Driver.findComponent", .callerObjRef_ = driverRef};
+        call2.paramList_.emplace_back(onRef);
+        auto reply2 = ApiReplyInfo();
+        server.Call(call2, reply2);
+        ASSERT_EQ(NO_ERROR, reply2.exception_.code_);
+        ASSERT_TRUE(reply2.resultValue_.is_string());
+        const auto componentRef = reply2.resultValue_.get<string>();
+        ASSERT_TRUE(componentRef.find("Component#") != string::npos);
+        // call isReachable
+        auto call3 = ApiCallInfo {.apiId_ = "Component.isReachable", .callerObjRef_ = componentRef};
+        server.Call(call3, reply);
+    }
+
+    MockController *controller_ = nullptr;
+};
+
+/** AC-1.1 / R-1: center point not occluded → true */
+TEST_F(FrontendApiHandlerIsReachableTest, componentIsReachableNotOccluded)
 {
-    auto widget = make_unique<Widget>();
-    widget->SetBounds(bounds);
-    widget->SetAttr(UiAttr::ZINDEX, to_string(zIndex));
-    widget->SetAttr(UiAttr::VISIBLE, visible ? "true" : "false");
-    widget->SetDisplayId(displayId);
-    auto ref = FrontendApiHandlerUtil::StoreBackendObject(move(widget));
-    return ref;
-}
-
-/** AC-1.1: center point not occluded → true (spec R-1) */
-TEST_F(FrontendApiHandlerTest, componentIsReachableNotOccluded)
-{
-    // Target widget: bounds [100,300,100,300], zIndex=0, visible
-    auto ref = CreateAndStoreWidget(Rect(100, 300, 100, 300), 0, true);
-
-    const auto &server = FrontendApiServer::Get();
-    auto call = ApiCallInfo {.apiId_ = "Component.isReachable", .callerObjRef_ = ref};
-    auto reply = ApiReplyInfo();
-    server.Call(call, reply);
-
+    // tree: root with two children; sibling does not cover the target center (200,200)
+    const string tree = R"(
+        {
+            "attributes":{"componentType":"Root","accessibilityId":"1","rectInScreen":"0,400,0,400"},
+            "children":[
+                {"attributes":{"componentType":"Button","accessibilityId":"10","content":"target",
+                    "rectInScreen":"100,300,100,300","zIndex":"0"},"children":[]},
+                {"attributes":{"componentType":"Text","accessibilityId":"11","content":"other",
+                    "rectInScreen":"0,80,0,80","zIndex":"1"},"children":[]}
+            ]
+        }
+    )";
+    Window win(12);
+    win.bounds_ = Rect{0, 400, 0, 400};
+    ApiReplyInfo reply;
+    CallIsReachable(win, tree, "target", reply);
     ASSERT_EQ(NO_ERROR, reply.exception_.code_);
     ASSERT_TRUE(reply.resultValue_.is_boolean());
     EXPECT_TRUE(reply.resultValue_.get<bool>()); // not occluded → true
 }
 
-/** AC-1.2: center point occluded by higher z-index → false (spec R-2) */
-TEST_F(FrontendApiHandlerTest, componentIsReachableOccludedByHigherZIndex)
+/** AC-1.2 / R-2: center point occluded by higher z-index → false */
+TEST_F(FrontendApiHandlerIsReachableTest, componentIsReachableOccludedByHigherZIndex)
 {
-    // Target widget: bounds [100,300,100,300] center (200,200), zIndex=0
-    auto ref = CreateAndStoreWidget(Rect(100, 300, 100, 300), 0, true);
-
-    // Occluder: bounds [150,250,150,250] covers center (200,200), zIndex=1 (higher)
-    // Note: this test validates the algorithm via direct Rect check since
-    // the handler's FindWidgets depends on controller state not set up here.
-    // Algorithm-level verification:
-    Point center(200, 200);
-    Rect occluderBounds(150, 250, 150, 250);
-    EXPECT_TRUE(RectAlgorithm::IsInnerPoint(occluderBounds, center));
-
-    // Handler-level: verify the API is registered and callable
-    const auto &server = FrontendApiServer::Get();
-    auto call = ApiCallInfo {.apiId_ = "Component.isReachable", .callerObjRef_ = ref};
-    auto reply = ApiReplyInfo();
-    server.Call(call, reply);
-    // With DummyController (no widget tree), RetrieveWidget may return error or the stored widget
-    // We verify the handler is registered and does not crash
-    EXPECT_TRUE(reply.exception_.code_ == NO_ERROR || reply.exception_.code_ == ERR_COMPONENT_LOST);
+    // overlay z-index 1 covers the target center (200,200)
+    const string tree = R"(
+        {
+            "attributes":{"componentType":"Root","accessibilityId":"1","rectInScreen":"0,400,0,400"},
+            "children":[
+                {"attributes":{"componentType":"Button","accessibilityId":"10","content":"target",
+                    "rectInScreen":"100,300,100,300","zIndex":"0"},"children":[]},
+                {"attributes":{"componentType":"Text","accessibilityId":"11","content":"overlay",
+                    "rectInScreen":"150,250,150,250","zIndex":"1"},"children":[]}
+            ]
+        }
+    )";
+    Window win(12);
+    win.bounds_ = Rect{0, 400, 0, 400};
+    ApiReplyInfo reply;
+    CallIsReachable(win, tree, "target", reply);
+    ASSERT_EQ(NO_ERROR, reply.exception_.code_);
+    ASSERT_TRUE(reply.resultValue_.is_boolean());
+    EXPECT_FALSE(reply.resultValue_.get<bool>()); // occluded by higher z-index → false
 }
 
-/** AC-1.3: partial occlusion but center visible → true (spec R-6) */
-TEST_F(FrontendApiHandlerTest, componentIsReachablePartialOcclusionCenterVisible)
+/** AC-1.3 / R-6: partial occlusion but center visible → true */
+TEST_F(FrontendApiHandlerIsReachableTest, componentIsReachablePartialOcclusionCenterVisible)
 {
-    // Target: bounds [100,300,100,300] center (200,200)
-    // Occluder: bounds [100,180,100,180] covers corner only, center (200,200) NOT covered
-    Point center(200, 200);
-    Rect partialOccluder(100, 180, 100, 180);
-    EXPECT_FALSE(RectAlgorithm::IsInnerPoint(partialOccluder, center)); // center NOT in occluder
-
-    // Algorithm verification: if no higher-z widget covers center, result is true
-    // (verified by IsInnerPoint returning false for the partial occluder)
-    SUCCEED();
+    // overlay covers only the corner [100,180], the center (200,200) is NOT covered
+    const string tree = R"(
+        {
+            "attributes":{"componentType":"Root","accessibilityId":"1","rectInScreen":"0,400,0,400"},
+            "children":[
+                {"attributes":{"componentType":"Button","accessibilityId":"10","content":"target",
+                    "rectInScreen":"100,300,100,300","zIndex":"0"},"children":[]},
+                {"attributes":{"componentType":"Text","accessibilityId":"11","content":"partial",
+                    "rectInScreen":"100,180,100,180","zIndex":"1"},"children":[]}
+            ]
+        }
+    )";
+    Window win(12);
+    win.bounds_ = Rect{0, 400, 0, 400};
+    ApiReplyInfo reply;
+    CallIsReachable(win, tree, "target", reply);
+    ASSERT_EQ(NO_ERROR, reply.exception_.code_);
+    ASSERT_TRUE(reply.resultValue_.is_boolean());
+    EXPECT_TRUE(reply.resultValue_.get<bool>()); // center visible → true
 }
 
 /** AC-1.4 / R-7: visible=false → false */
-TEST_F(FrontendApiHandlerTest, componentIsReachableInvisible)
+TEST_F(FrontendApiHandlerIsReachableTest, componentIsReachableInvisible)
 {
-    auto ref = CreateAndStoreWidget(Rect(100, 300, 100, 300), 0, false); // visible=false
-
-    const auto &server = FrontendApiServer::Get();
-    auto call = ApiCallInfo {.apiId_ = "Component.isReachable", .callerObjRef_ = ref};
-    auto reply = ApiReplyInfo();
-    server.Call(call, reply);
-
-    // Either handler returns false (if widget found) or throws (if controller can't find it)
-    if (reply.exception_.code_ == NO_ERROR) {
-        ASSERT_TRUE(reply.resultValue_.is_boolean());
-        EXPECT_FALSE(reply.resultValue_.get<bool>()); // invisible → false
-    }
+    // explicit visible=false with non-zero bounds
+    const string tree = R"(
+        {
+            "attributes":{"componentType":"Root","accessibilityId":"1","rectInScreen":"0,400,0,400"},
+            "children":[
+                {"attributes":{"componentType":"Button","accessibilityId":"10","content":"target",
+                    "rectInScreen":"100,300,100,300","zIndex":"0","visible":"false"},"children":[]}
+            ]
+        }
+    )";
+    Window win(12);
+    win.bounds_ = Rect{0, 400, 0, 400};
+    ApiReplyInfo reply;
+    CallIsReachable(win, tree, "target", reply);
+    ASSERT_EQ(NO_ERROR, reply.exception_.code_);
+    ASSERT_TRUE(reply.resultValue_.is_boolean());
+    EXPECT_FALSE(reply.resultValue_.get<bool>()); // invisible → false
 }
 
 /** AC-4.2 / R-8: zero-area bounds → false */
-TEST_F(FrontendApiHandlerTest, componentIsReachableZeroArea)
+TEST_F(FrontendApiHandlerIsReachableTest, componentIsReachableZeroArea)
 {
-    // width=0 → zero area
-    auto ref = CreateAndStoreWidget(Rect(100, 100, 100, 300), 0, true); // left==right → zero width
-
-    const auto &server = FrontendApiServer::Get();
-    auto call = ApiCallInfo {.apiId_ = "Component.isReachable", .callerObjRef_ = ref};
-    auto reply = ApiReplyInfo();
-    server.Call(call, reply);
-
-    if (reply.exception_.code_ == NO_ERROR) {
-        ASSERT_TRUE(reply.resultValue_.is_boolean());
-        EXPECT_FALSE(reply.resultValue_.get<bool>()); // zero area → false
-    }
+    // zero-area bounds (left==right) with explicit visible=true
+    const string tree = R"(
+        {
+            "attributes":{"componentType":"Root","accessibilityId":"1","rectInScreen":"0,400,0,400"},
+            "children":[
+                {"attributes":{"componentType":"Button","accessibilityId":"10","content":"target",
+                    "rectInScreen":"100,100,100,100","zIndex":"0","visible":"true"},"children":[]}
+            ]
+        }
+    )";
+    Window win(12);
+    win.bounds_ = Rect{0, 400, 0, 400};
+    ApiReplyInfo reply;
+    CallIsReachable(win, tree, "target", reply);
+    ASSERT_EQ(NO_ERROR, reply.exception_.code_);
+    ASSERT_TRUE(reply.resultValue_.is_boolean());
+    EXPECT_FALSE(reply.resultValue_.get<bool>()); // zero area → false
 }
 
-/** AC-4.1 / R-3: component not found → 17000004 */
-TEST_F(FrontendApiHandlerTest, componentIsReachableComponentLost)
+/** AC-4.1 / R-3: component destroyed → 17000004 */
+TEST_F(FrontendApiHandlerIsReachableTest, componentIsReachableComponentLost)
 {
-    // Use a fake ref that doesn't correspond to any stored widget
-    auto call = ApiCallInfo {.apiId_ = "Component.isReachable", .callerObjRef_ = "Component#99999"};
-    auto reply = ApiReplyInfo();
+    const string tree = R"(
+        {
+            "attributes":{"componentType":"Root","accessibilityId":"1","rectInScreen":"0,400,0,400"},
+            "children":[
+                {"attributes":{"componentType":"Button","accessibilityId":"10","content":"target",
+                    "rectInScreen":"100,300,100,300","zIndex":"0"},"children":[]}
+            ]
+        }
+    )";
+    Window win(12);
+    win.bounds_ = Rect{0, 400, 0, 400};
+    auto eles = MockElementNodeIterator::ConstructIteratorByJson(tree)->elementInfoLists_;
+    controller_->AddWindowsAndNode(win, eles);
     const auto &server = FrontendApiServer::Get();
-    server.Call(call, reply);
-
-    // Should get ERR_COMPONENT_LOST (17000004) or backend object not found error
-    EXPECT_NE(NO_ERROR, reply.exception_.code_);
+    // create driver
+    auto call0 = ApiCallInfo {.apiId_ = "Driver.create", .callerObjRef_ = string()};
+    auto reply0 = ApiReplyInfo();
+    server.Call(call0, reply0);
+    ASSERT_EQ(NO_ERROR, reply0.exception_.code_);
+    const auto driverRef = reply0.resultValue_.get<string>();
+    // build selector and find component
+    auto call1 = ApiCallInfo {.apiId_ = "On.text", .callerObjRef_ = string(REF_SEED_ON)};
+    call1.paramList_.emplace_back("target");
+    auto reply1 = ApiReplyInfo();
+    server.Call(call1, reply1);
+    ASSERT_EQ(NO_ERROR, reply1.exception_.code_);
+    auto call2 = ApiCallInfo {.apiId_ = "Driver.findComponent", .callerObjRef_ = driverRef};
+    call2.paramList_.emplace_back(reply1.resultValue_.get<string>());
+    auto reply2 = ApiReplyInfo();
+    server.Call(call2, reply2);
+    ASSERT_EQ(NO_ERROR, reply2.exception_.code_);
+    const auto componentRef = reply2.resultValue_.get<string>();
+    // destroy the window so the component is gone, then isReachable should deliver 17000004
+    controller_->RemoveWindowsAndNode(win);
+    auto call3 = ApiCallInfo {.apiId_ = "Component.isReachable", .callerObjRef_ = componentRef};
+    auto reply3 = ApiReplyInfo();
+    server.Call(call3, reply3);
+    ASSERT_EQ(ERR_COMPONENT_LOST, reply3.exception_.code_);
+    EXPECT_TRUE(reply3.resultValue_.is_null());
 }
 
-/** Algorithm-level tests for RectAlgorithm::IsInnerPoint (used by isReachable) */
-TEST_F(FrontendApiHandlerTest, rectAlgorithmIsInnerPoint)
+/** R-2 / ADR-4: same z-index, sibling drawn later covers the center → false */
+TEST_F(FrontendApiHandlerIsReachableTest, componentIsReachableSameZIndexLaterSiblingOccludes)
+{
+    // both widgets have z-index 0; the overlay appears after the target in the tree,
+    // so it is drawn later and stacks on top of the target (ADR-4)
+    const string tree = R"(
+        {
+            "attributes":{"componentType":"Root","accessibilityId":"1","rectInScreen":"0,400,0,400"},
+            "children":[
+                {"attributes":{"componentType":"Button","accessibilityId":"10","content":"target",
+                    "rectInScreen":"100,300,100,300","zIndex":"0"},"children":[]},
+                {"attributes":{"componentType":"Text","accessibilityId":"11","content":"overlay",
+                    "rectInScreen":"150,250,150,250","zIndex":"0"},"children":[]}
+            ]
+        }
+    )";
+    Window win(12);
+    win.bounds_ = Rect{0, 400, 0, 400};
+    ApiReplyInfo reply;
+    CallIsReachable(win, tree, "target", reply);
+    ASSERT_EQ(NO_ERROR, reply.exception_.code_);
+    ASSERT_TRUE(reply.resultValue_.is_boolean());
+    EXPECT_FALSE(reply.resultValue_.get<bool>()); // same z-index, drawn later → occludes
+}
+
+/** R-2 / ADR-4: same z-index, sibling drawn earlier does not occlude → true */
+TEST_F(FrontendApiHandlerIsReachableTest, componentIsReachableSameZIndexEarlierSiblingNotOcclude)
+{
+    // both widgets have z-index 0; the sibling appears before the target in the tree,
+    // so the target is drawn later and stacks on top of the sibling (ADR-4)
+    const string tree = R"(
+        {
+            "attributes":{"componentType":"Root","accessibilityId":"1","rectInScreen":"0,400,0,400"},
+            "children":[
+                {"attributes":{"componentType":"Text","accessibilityId":"11","content":"underlay",
+                    "rectInScreen":"150,250,150,250","zIndex":"0"},"children":[]},
+                {"attributes":{"componentType":"Button","accessibilityId":"10","content":"target",
+                    "rectInScreen":"100,300,100,300","zIndex":"0"},"children":[]}
+            ]
+        }
+    )";
+    Window win(12);
+    win.bounds_ = Rect{0, 400, 0, 400};
+    ApiReplyInfo reply;
+    CallIsReachable(win, tree, "target", reply);
+    ASSERT_EQ(NO_ERROR, reply.exception_.code_);
+    ASSERT_TRUE(reply.resultValue_.is_boolean());
+    EXPECT_TRUE(reply.resultValue_.get<bool>()); // same z-index, drawn earlier → not occluded
+}
+
+/** spec behavior scenario 7: center point on the occluder's edge counts as occluded → false */
+TEST_F(FrontendApiHandlerIsReachableTest, componentIsReachableCenterOnOccluderEdge)
+{
+    // overlay bounds [100,200,100,300]: its right edge (x=200) passes exactly through
+    // the target center (200,200) → occluded (edge-inclusive)
+    const string tree = R"(
+        {
+            "attributes":{"componentType":"Root","accessibilityId":"1","rectInScreen":"0,400,0,400"},
+            "children":[
+                {"attributes":{"componentType":"Button","accessibilityId":"10","content":"target",
+                    "rectInScreen":"100,300,100,300","zIndex":"0"},"children":[]},
+                {"attributes":{"componentType":"Text","accessibilityId":"11","content":"overlay",
+                    "rectInScreen":"100,200,100,300","zIndex":"1"},"children":[]}
+            ]
+        }
+    )";
+    Window win(12);
+    win.bounds_ = Rect{0, 400, 0, 400};
+    ApiReplyInfo reply;
+    CallIsReachable(win, tree, "target", reply);
+    ASSERT_EQ(NO_ERROR, reply.exception_.code_);
+    ASSERT_TRUE(reply.resultValue_.is_boolean());
+    EXPECT_FALSE(reply.resultValue_.get<bool>()); // edge point counts as occluded
+}
+
+/** spec architecture constraint: only widgets on the same display are considered */
+TEST_F(FrontendApiHandlerIsReachableTest, componentIsReachableDifferentDisplayNotOcclude)
+{
+    // window 12 on display 0 holds the target; window 13 on display 1 holds an occluder
+    // with identical local coordinates — it must not occlude the target (local coords overlap)
+    const string targetTree = R"(
+        {
+            "attributes":{"componentType":"Root","accessibilityId":"1","windowId":"12","rectInScreen":"0,400,0,400"},
+            "children":[
+                {"attributes":{"componentType":"Button","accessibilityId":"10","content":"target",
+                    "windowId":"12","rectInScreen":"100,300,100,300","zIndex":"0"},"children":[]}
+            ]
+        }
+    )";
+    const string otherTree = R"(
+        {
+            "attributes":{"componentType":"Root","accessibilityId":"2","windowId":"13","rectInScreen":"0,400,0,400"},
+            "children":[
+                {"attributes":{"componentType":"Text","accessibilityId":"20","content":"otherdisplay",
+                    "windowId":"13","rectInScreen":"150,250,150,250","zIndex":"1"},"children":[]}
+            ]
+        }
+    )";
+    auto targetEles = MockElementNodeIterator::ConstructIteratorByJson(targetTree)->elementInfoLists_;
+    auto otherEles = MockElementNodeIterator::ConstructIteratorByJson(otherTree)->elementInfoLists_;
+    Window win0(12);
+    win0.displayId_ = 0;
+    win0.bounds_ = Rect{0, 400, 0, 400};
+    Window win1(13);
+    win1.displayId_ = 1;
+    win1.bounds_ = Rect{0, 400, 0, 400};
+    controller_->AddWindowsAndNode(win0, targetEles);
+    controller_->AddWindowsAndNode(win1, otherEles);
+    const auto &server = FrontendApiServer::Get();
+    // create driver
+    auto call0 = ApiCallInfo {.apiId_ = "Driver.create", .callerObjRef_ = string()};
+    auto reply0 = ApiReplyInfo();
+    server.Call(call0, reply0);
+    ASSERT_EQ(NO_ERROR, reply0.exception_.code_);
+    const auto driverRef = reply0.resultValue_.get<string>();
+    // build selector by content
+    auto call1 = ApiCallInfo {.apiId_ = "On.text", .callerObjRef_ = string(REF_SEED_ON)};
+    call1.paramList_.emplace_back("target");
+    auto reply1 = ApiReplyInfo();
+    server.Call(call1, reply1);
+    ASSERT_EQ(NO_ERROR, reply1.exception_.code_);
+    // find component
+    auto call2 = ApiCallInfo {.apiId_ = "Driver.findComponent", .callerObjRef_ = driverRef};
+    call2.paramList_.emplace_back(reply1.resultValue_.get<string>());
+    auto reply2 = ApiReplyInfo();
+    server.Call(call2, reply2);
+    ASSERT_EQ(NO_ERROR, reply2.exception_.code_);
+    const auto componentRef = reply2.resultValue_.get<string>();
+    // call isReachable: the higher-z widget on display 1 must not occlude the target on display 0
+    auto call3 = ApiCallInfo {.apiId_ = "Component.isReachable", .callerObjRef_ = componentRef};
+    auto reply3 = ApiReplyInfo();
+    server.Call(call3, reply3);
+    ASSERT_EQ(NO_ERROR, reply3.exception_.code_);
+    ASSERT_TRUE(reply3.resultValue_.is_boolean());
+    EXPECT_TRUE(reply3.resultValue_.get<bool>()); // different display → not occluded
+}
+
+/** R-2: lower z-index widget covering the center does not occlude → true */
+TEST_F(FrontendApiHandlerIsReachableTest, componentIsReachableLowerZIndexNotOcclude)
+{
+    // target z-index 1; overlay z-index 0 covers the target center — lower z never occludes
+    const string tree = R"(
+        {
+            "attributes":{"componentType":"Root","accessibilityId":"1","rectInScreen":"0,400,0,400"},
+            "children":[
+                {"attributes":{"componentType":"Button","accessibilityId":"10","content":"target",
+                    "rectInScreen":"100,300,100,300","zIndex":"1"},"children":[]},
+                {"attributes":{"componentType":"Text","accessibilityId":"11","content":"underlay",
+                    "rectInScreen":"150,250,150,250","zIndex":"0"},"children":[]}
+            ]
+        }
+    )";
+    Window win(12);
+    win.bounds_ = Rect{0, 400, 0, 400};
+    ApiReplyInfo reply;
+    CallIsReachable(win, tree, "target", reply);
+    ASSERT_EQ(NO_ERROR, reply.exception_.code_);
+    ASSERT_TRUE(reply.resultValue_.is_boolean());
+    EXPECT_TRUE(reply.resultValue_.get<bool>()); // lower z-index → not occluded
+}
+
+/** Algorithm-level tests for RectAlgorithm::IsInnerPoint/IsPointOnEdge (used by isReachable) */
+TEST_F(FrontendApiHandlerIsReachableTest, rectAlgorithmPointChecks)
 {
     Rect rect(100, 300, 100, 300);
 
-    // Center point is inside
+    // IsInnerPoint is open-interval: inner points only
     EXPECT_TRUE(RectAlgorithm::IsInnerPoint(rect, Point(200, 200)));
+    EXPECT_FALSE(RectAlgorithm::IsInnerPoint(rect, Point(100, 100))); // corner excluded
+    EXPECT_FALSE(RectAlgorithm::IsInnerPoint(rect, Point(300, 300))); // corner excluded
+    EXPECT_FALSE(RectAlgorithm::IsInnerPoint(rect, Point(100, 200))); // left edge excluded
+    EXPECT_FALSE(RectAlgorithm::IsInnerPoint(rect, Point(200, 100))); // top edge excluded
+    EXPECT_FALSE(RectAlgorithm::IsInnerPoint(rect, Point(50, 200)));  // outside
+    EXPECT_FALSE(RectAlgorithm::IsInnerPoint(rect, Point(350, 200))); // outside
 
-    // Corner points (inclusive)
-    EXPECT_TRUE(RectAlgorithm::IsInnerPoint(rect, Point(100, 100)));
-    EXPECT_TRUE(RectAlgorithm::IsInnerPoint(rect, Point(300, 300)));
+    // IsPointOnEdge covers the border: edge and corner points
+    EXPECT_TRUE(RectAlgorithm::IsPointOnEdge(rect, Point(100, 100)));
+    EXPECT_TRUE(RectAlgorithm::IsPointOnEdge(rect, Point(300, 300)));
+    EXPECT_TRUE(RectAlgorithm::IsPointOnEdge(rect, Point(100, 200)));
+    EXPECT_TRUE(RectAlgorithm::IsPointOnEdge(rect, Point(200, 100)));
+    EXPECT_FALSE(RectAlgorithm::IsPointOnEdge(rect, Point(200, 200))); // inner point is not on edge
+    EXPECT_FALSE(RectAlgorithm::IsPointOnEdge(rect, Point(50, 200)));  // outside
 
-    // Points outside
-    EXPECT_FALSE(RectAlgorithm::IsInnerPoint(rect, Point(50, 200)));
-    EXPECT_FALSE(RectAlgorithm::IsInnerPoint(rect, Point(350, 200)));
-    EXPECT_FALSE(RectAlgorithm::IsInnerPoint(rect, Point(200, 50)));
-    EXPECT_FALSE(RectAlgorithm::IsInnerPoint(rect, Point(200, 350)));
-
-    // Edge case: zero-area rect
+    // zero-area rect: no inner point
     Rect zeroRect(100, 100, 100, 100);
     EXPECT_FALSE(RectAlgorithm::IsInnerPoint(zeroRect, Point(100, 100)));
+    EXPECT_TRUE(RectAlgorithm::IsPointOnEdge(zeroRect, Point(100, 100)));
 }

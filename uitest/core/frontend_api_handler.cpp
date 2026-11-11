@@ -2176,13 +2176,11 @@ static void RegisterExtensionHandler()
         // 4. Compute center point
         Point center(bounds.GetCenterX(), bounds.GetCenterY());
 
-        // 5. Get own z-index
-        int32_t myZIndex = 0;
-        try {
-            myZIndex = std::stoi(snapshot->GetAttr(UiAttr::ZINDEX));
-        } catch (...) {
-            myZIndex = 0;
-        }
+        // 5. Get own z-index (defaults to 0 on parse failure) and own identity for self-exclusion
+        int32_t myZIndex = atoi(snapshot->GetAttr(UiAttr::ZINDEX).c_str());
+        const auto myHierarchy = snapshot->GetHierarchy();
+        const auto myHostWindowId = snapshot->GetAttr(UiAttr::HOST_WINDOW_ID);
+        const auto myDisplayId = snapshot->GetDisplayId();
 
         // 6. Get all visible widgets (for occlusion check)
         WidgetSelector selector(true); // addVisibleMatcher = true
@@ -2194,32 +2192,47 @@ static void RegisterExtensionHandler()
             return;
         }
 
-        // 7. Check occlusion: any visible widget with higher z-index covering center (spec R-1/R-2/R-6)
-        for (auto &other : allWidgets) {
-            if (other.get() == snapshot) {
-                continue;
+        // 7. Locate self in the traversal result by hierarchy + hostWindowId. The traversal index
+        // reflects the drawing order: widgets visited later are drawn later and stack on top.
+        int64_t myIndex = -1;
+        for (size_t idx = 0; idx < allWidgets.size(); idx++) {
+            const auto &widget = allWidgets[idx];
+            if (widget->GetHierarchy() == myHierarchy
+                && widget->GetAttr(UiAttr::HOST_WINDOW_ID) == myHostWindowId) {
+                myIndex = static_cast<int64_t>(idx);
+                break;
+            }
+        }
+
+        // 8. Check occlusion (spec R-1/R-2/R-6): any same-display widget with higher z-index covering
+        // the center point occludes; with equal z-index, only widgets drawn later (later in traversal
+        // order) occlude (ADR-4); the center point on the occluder's edge counts as occluded.
+        for (size_t idx = 0; idx < allWidgets.size(); idx++) {
+            auto &other = allWidgets[idx];
+            if (static_cast<int64_t>(idx) == myIndex) {
+                continue; // skip self
+            }
+            if (other->GetDisplayId() != myDisplayId) {
+                continue; // only widgets on the same display occlude
             }
             if (!other->IsVisible()) {
                 continue; // invisible cannot occlude
             }
-
-            int32_t otherZIndex = 0;
-            try {
-                otherZIndex = std::stoi(other->GetAttr(UiAttr::ZINDEX));
-            } catch (...) {
-                continue;
-            }
-            if (otherZIndex <= myZIndex) {
+            int32_t otherZIndex = atoi(other->GetAttr(UiAttr::ZINDEX).c_str());
+            if (otherZIndex < myZIndex) {
                 continue; // only higher z-index matters (spec R-2)
             }
-
-            if (RectAlgorithm::IsInnerPoint(other->GetBounds(), center)) {
+            if (otherZIndex == myZIndex && (myIndex < 0 || static_cast<int64_t>(idx) < myIndex)) {
+                continue; // same z-index: only widgets drawn later occlude (ADR-4)
+            }
+            if (RectAlgorithm::IsInnerPoint(other->GetBounds(), center)
+                || RectAlgorithm::IsPointOnEdge(other->GetBounds(), center)) {
                 out.resultValue_ = false;
                 return;
             }
         }
 
-        // 8. Not occluded
+        // 9. Not occluded
         out.resultValue_ = true;
     }
 
