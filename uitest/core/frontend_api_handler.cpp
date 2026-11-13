@@ -2217,7 +2217,6 @@ static void RegisterExtensionHandler()
             out.resultValue_ = false;
             return true;
         }
-        // a widget that does not respond to touch test can never be operated
         if (snapshot.GetAttr(UiAttr::HITTESTBEHAVIOR) == "HitTestMode.None") {
             out.resultValue_ = false;
             return true;
@@ -2234,7 +2233,7 @@ static void RegisterExtensionHandler()
     static bool CollectAllVisibleWidgets(UiDriver &driver, vector<unique_ptr<Widget>> &widgets,
         ApiReplyInfo &out)
     {
-        WidgetSelector selector(true); // addVisibleMatcher = true
+        WidgetSelector selector(true);
         selector.SetWantMulti(true);
         driver.FindWidgets(selector, widgets, out.exception_, true, true);
         return out.exception_.code_ == NO_ERROR;
@@ -2271,13 +2270,13 @@ static void RegisterExtensionHandler()
         for (size_t idx = 0; idx < allWidgets.size(); idx++) {
             auto &other = allWidgets[idx];
             if (static_cast<int64_t>(idx) == myIndex) {
-                continue; // skip self
+                continue;
             }
             if (other->GetDisplayId() != myDisplayId) {
-                continue; // only widgets on the same display occlude
+                continue;
             }
             if (!other->IsVisible()) {
-                continue; // invisible cannot occlude
+                continue;
             }
             const bool occluded = other->GetAttr(UiAttr::HOST_WINDOW_ID) != myHostWindowId
                 ? CrossWindowOccludes(*other, center, myWindowLayer, myDisplayId, driver)
