@@ -184,3 +184,35 @@ TEST(RectAlgorithmTest, computeMaxVisibleRegion)
     RectAlgorithm::ComputeMaxVisibleRegion(rect, overlaySet, region);
     ASSERT_TRUE(RectAlgorithm::CheckEqual(region, expectedVisibleRegion));
 }
+TEST(RectAlgorithmTest, pointChecks)
+{
+    // rect: x in [100, 300], y in [100, 300]; named constants to keep the geometry readable
+    constexpr int32_t lowEdge = 100;    // rect left / top
+    constexpr int32_t highEdge = 300;  // rect right / bottom
+    constexpr int32_t midPoint = 200;  // rect center x / y
+    constexpr int32_t outsideLow = 50;
+    constexpr int32_t outsideHigh = 350;
+    Rect rect(lowEdge, highEdge, lowEdge, highEdge);
+
+    // IsInnerPoint is open-interval: inner points only
+    EXPECT_TRUE(RectAlgorithm::IsInnerPoint(rect, Point(midPoint, midPoint)));
+    EXPECT_FALSE(RectAlgorithm::IsInnerPoint(rect, Point(lowEdge, lowEdge)));    // corner excluded
+    EXPECT_FALSE(RectAlgorithm::IsInnerPoint(rect, Point(highEdge, highEdge))); // corner excluded
+    EXPECT_FALSE(RectAlgorithm::IsInnerPoint(rect, Point(lowEdge, midPoint)));  // left edge excluded
+    EXPECT_FALSE(RectAlgorithm::IsInnerPoint(rect, Point(midPoint, lowEdge)));  // top edge excluded
+    EXPECT_FALSE(RectAlgorithm::IsInnerPoint(rect, Point(outsideLow, midPoint)));  // outside
+    EXPECT_FALSE(RectAlgorithm::IsInnerPoint(rect, Point(outsideHigh, midPoint))); // outside
+
+    // IsPointOnEdge covers the border: edge and corner points
+    EXPECT_TRUE(RectAlgorithm::IsPointOnEdge(rect, Point(lowEdge, lowEdge)));
+    EXPECT_TRUE(RectAlgorithm::IsPointOnEdge(rect, Point(highEdge, highEdge)));
+    EXPECT_TRUE(RectAlgorithm::IsPointOnEdge(rect, Point(lowEdge, midPoint)));
+    EXPECT_TRUE(RectAlgorithm::IsPointOnEdge(rect, Point(midPoint, lowEdge)));
+    EXPECT_FALSE(RectAlgorithm::IsPointOnEdge(rect, Point(midPoint, midPoint))); // inner point is not on edge
+    EXPECT_FALSE(RectAlgorithm::IsPointOnEdge(rect, Point(outsideLow, midPoint))); // outside
+
+    // zero-area rect: no inner point
+    Rect zeroRect(lowEdge, lowEdge, lowEdge, lowEdge);
+    EXPECT_FALSE(RectAlgorithm::IsInnerPoint(zeroRect, Point(lowEdge, lowEdge)));
+    EXPECT_TRUE(RectAlgorithm::IsPointOnEdge(zeroRect, Point(lowEdge, lowEdge)));
+}

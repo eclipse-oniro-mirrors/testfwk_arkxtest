@@ -1673,7 +1673,8 @@ protected:
             auto reply1 = ApiReplyInfo();
             server.Call(call1, reply1);
             EXPECT_EQ(NO_ERROR, reply1.exception_.code_);
-            auto call2 = ApiCallInfo {.apiId_ = "Driver.findComponent", .callerObjRef_ = reply0.resultValue_.get<string>()};
+            auto call2 = ApiCallInfo {.apiId_ = "Driver.findComponent",
+                                      .callerObjRef_ = reply0.resultValue_.get<string>()};
             call2.paramList_.emplace_back(reply1.resultValue_.get<string>());
             auto reply2 = ApiReplyInfo();
             server.Call(call2, reply2);
@@ -1726,6 +1727,23 @@ protected:
 
         MockController *controller_ = nullptr;
 
+        // shared window ids / display / stacking layers used by the isReachable test cases
+        static constexpr int32_t TEST_WINDOW_ID = 12;
+        static constexpr int32_t TEST_OCCLUDER_WINDOW_ID = 13;
+        static constexpr int32_t TEST_DISPLAY_ID = 0;
+        static constexpr int32_t LOWER_WINDOW_LAYER = 1;
+        static constexpr int32_t HIGHER_WINDOW_LAYER = 10;
+
+        /** Build a square test window with the given id, display and stacking layer. */
+        static Window MakeTestWindow(int32_t id, int32_t displayId, int32_t layer)
+        {
+            Window win(id);
+            win.displayId_ = displayId;
+            win.windowLayer_ = layer;
+            win.bounds_ = Rect{0, 400, 0, 400};
+            return win;
+        }
+
         /** Register two windows (same display) with the given trees, then run the real API chain
          *  and deliver the isReachable reply for the target content. */
         void CallIsReachableTwoWindows(const Window &win0, const string &tree0, const Window &win1,
@@ -1776,8 +1794,7 @@ TEST_F(FrontendApiHandlerIsReachableTest, componentIsReachableNotOccluded)
             ]
         }
     )";
-    Window win(12);
-    win.bounds_ = Rect{0, 400, 0, 400};
+    Window win = MakeTestWindow(TEST_WINDOW_ID, TEST_DISPLAY_ID, 0);
     ApiReplyInfo reply;
     CallIsReachable(win, tree, "target", reply);
     ASSERT_EQ(NO_ERROR, reply.exception_.code_);
@@ -1800,8 +1817,7 @@ TEST_F(FrontendApiHandlerIsReachableTest, componentIsReachableOccludedByHigherZI
             ]
         }
     )";
-    Window win(12);
-    win.bounds_ = Rect{0, 400, 0, 400};
+    Window win = MakeTestWindow(TEST_WINDOW_ID, TEST_DISPLAY_ID, 0);
     ApiReplyInfo reply;
     CallIsReachable(win, tree, "target", reply);
     ASSERT_EQ(NO_ERROR, reply.exception_.code_);
@@ -1824,8 +1840,7 @@ TEST_F(FrontendApiHandlerIsReachableTest, componentIsReachablePartialOcclusionCe
             ]
         }
     )";
-    Window win(12);
-    win.bounds_ = Rect{0, 400, 0, 400};
+    Window win = MakeTestWindow(TEST_WINDOW_ID, TEST_DISPLAY_ID, 0);
     ApiReplyInfo reply;
     CallIsReachable(win, tree, "target", reply);
     ASSERT_EQ(NO_ERROR, reply.exception_.code_);
@@ -1949,8 +1964,7 @@ TEST_F(FrontendApiHandlerIsReachableTest, componentIsReachableSameZIndexLaterSib
             ]
         }
     )";
-    Window win(12);
-    win.bounds_ = Rect{0, 400, 0, 400};
+    Window win = MakeTestWindow(TEST_WINDOW_ID, TEST_DISPLAY_ID, 0);
     ApiReplyInfo reply;
     CallIsReachable(win, tree, "target", reply);
     ASSERT_EQ(NO_ERROR, reply.exception_.code_);
@@ -1974,8 +1988,7 @@ TEST_F(FrontendApiHandlerIsReachableTest, componentIsReachableSameZIndexEarlierS
             ]
         }
     )";
-    Window win(12);
-    win.bounds_ = Rect{0, 400, 0, 400};
+    Window win = MakeTestWindow(TEST_WINDOW_ID, TEST_DISPLAY_ID, 0);
     ApiReplyInfo reply;
     CallIsReachable(win, tree, "target", reply);
     ASSERT_EQ(NO_ERROR, reply.exception_.code_);
@@ -1999,8 +2012,7 @@ TEST_F(FrontendApiHandlerIsReachableTest, componentIsReachableCenterOnOccluderEd
             ]
         }
     )";
-    Window win(12);
-    win.bounds_ = Rect{0, 400, 0, 400};
+    Window win = MakeTestWindow(TEST_WINDOW_ID, TEST_DISPLAY_ID, 0);
     ApiReplyInfo reply;
     CallIsReachable(win, tree, "target", reply);
     ASSERT_EQ(NO_ERROR, reply.exception_.code_);
@@ -2015,59 +2027,30 @@ TEST_F(FrontendApiHandlerIsReachableTest, componentIsReachableDifferentDisplayNo
     // with identical local coordinates — it must not occlude the target (local coords overlap)
     const string targetTree = R"(
         {
-            "attributes":{"componentType":"Root","accessibilityId":"1","windowId":"12","rectInScreen":"0,400,0,400"},
+            "attributes":{"componentType":"Root","accessibilityId":"1","windowId":"12","rectInScreen":"0, 400, 0, 400"},
             "children":[
                 {"attributes":{"componentType":"Button","accessibilityId":"10","content":"target",
-                    "windowId":"12","rectInScreen":"100,300,100,300","zIndex":"0"},"children":[]}
+                    "windowId":"12","rectInScreen":"100, 300, 100, 300","zIndex":"0"},"children":[]}
             ]
         }
     )";
     const string otherTree = R"(
         {
-            "attributes":{"componentType":"Root","accessibilityId":"2","windowId":"13","rectInScreen":"0,400,0,400"},
+            "attributes":{"componentType":"Root","accessibilityId":"2","windowId":"13","rectInScreen":"0, 400, 0, 400"},
             "children":[
                 {"attributes":{"componentType":"Text","accessibilityId":"20","content":"otherdisplay",
-                    "windowId":"13","rectInScreen":"150,250,150,250","zIndex":"1"},"children":[]}
+                    "windowId":"13","rectInScreen":"150, 250, 150, 250","zIndex":"1"},"children":[]}
             ]
         }
     )";
-    auto targetEles = MockElementNodeIterator::ConstructIteratorByJson(targetTree)->elementInfoLists_;
-    auto otherEles = MockElementNodeIterator::ConstructIteratorByJson(otherTree)->elementInfoLists_;
-    Window win0(12);
-    win0.displayId_ = 0;
-    win0.bounds_ = Rect{0, 400, 0, 400};
-    Window win1(13);
-    win1.displayId_ = 1;
-    win1.bounds_ = Rect{0, 400, 0, 400};
-    controller_->AddWindowsAndNode(win0, targetEles);
-    controller_->AddWindowsAndNode(win1, otherEles);
-    const auto &server = FrontendApiServer::Get();
-    // create driver
-    auto call0 = ApiCallInfo {.apiId_ = "Driver.create", .callerObjRef_ = string()};
-    auto reply0 = ApiReplyInfo();
-    server.Call(call0, reply0);
-    ASSERT_EQ(NO_ERROR, reply0.exception_.code_);
-    const auto driverRef = reply0.resultValue_.get<string>();
-    // build selector by content
-    auto call1 = ApiCallInfo {.apiId_ = "On.text", .callerObjRef_ = string(REF_SEED_ON)};
-    call1.paramList_.emplace_back("target");
-    auto reply1 = ApiReplyInfo();
-    server.Call(call1, reply1);
-    ASSERT_EQ(NO_ERROR, reply1.exception_.code_);
-    // find component
-    auto call2 = ApiCallInfo {.apiId_ = "Driver.findComponent", .callerObjRef_ = driverRef};
-    call2.paramList_.emplace_back(reply1.resultValue_.get<string>());
-    auto reply2 = ApiReplyInfo();
-    server.Call(call2, reply2);
-    ASSERT_EQ(NO_ERROR, reply2.exception_.code_);
-    const auto componentRef = reply2.resultValue_.get<string>();
-    // call isReachable: the higher-z widget on display 1 must not occlude the target on display 0
-    auto call3 = ApiCallInfo {.apiId_ = "Component.isReachable", .callerObjRef_ = componentRef};
-    auto reply3 = ApiReplyInfo();
-    server.Call(call3, reply3);
-    ASSERT_EQ(NO_ERROR, reply3.exception_.code_);
-    ASSERT_TRUE(reply3.resultValue_.is_boolean());
-    EXPECT_TRUE(reply3.resultValue_.get<bool>()); // different display → not occluded
+    constexpr int32_t secondDisplayId = 1;
+    Window win0 = MakeTestWindow(TEST_WINDOW_ID, TEST_DISPLAY_ID, 0);
+    Window win1 = MakeTestWindow(TEST_OCCLUDER_WINDOW_ID, secondDisplayId, 0);
+    ApiReplyInfo reply;
+    CallIsReachableTwoWindows(win0, targetTree, win1, otherTree, "target", reply);
+    ASSERT_EQ(NO_ERROR, reply.exception_.code_);
+    ASSERT_TRUE(reply.resultValue_.is_boolean());
+    EXPECT_TRUE(reply.resultValue_.get<bool>()); // different display → not occluded
 }
 
 /** lower z-index widget covering the center does not occlude → true */
@@ -2085,41 +2068,12 @@ TEST_F(FrontendApiHandlerIsReachableTest, componentIsReachableLowerZIndexNotOccl
             ]
         }
     )";
-    Window win(12);
-    win.bounds_ = Rect{0, 400, 0, 400};
+    Window win = MakeTestWindow(TEST_WINDOW_ID, TEST_DISPLAY_ID, 0);
     ApiReplyInfo reply;
     CallIsReachable(win, tree, "target", reply);
     ASSERT_EQ(NO_ERROR, reply.exception_.code_);
     ASSERT_TRUE(reply.resultValue_.is_boolean());
     EXPECT_TRUE(reply.resultValue_.get<bool>()); // lower z-index → not occluded
-}
-
-/** Algorithm-level tests for RectAlgorithm::IsInnerPoint/IsPointOnEdge (used by isReachable) */
-TEST_F(FrontendApiHandlerIsReachableTest, rectAlgorithmPointChecks)
-{
-    Rect rect(100, 300, 100, 300);
-
-    // IsInnerPoint is open-interval: inner points only
-    EXPECT_TRUE(RectAlgorithm::IsInnerPoint(rect, Point(200, 200)));
-    EXPECT_FALSE(RectAlgorithm::IsInnerPoint(rect, Point(100, 100))); // corner excluded
-    EXPECT_FALSE(RectAlgorithm::IsInnerPoint(rect, Point(300, 300))); // corner excluded
-    EXPECT_FALSE(RectAlgorithm::IsInnerPoint(rect, Point(100, 200))); // left edge excluded
-    EXPECT_FALSE(RectAlgorithm::IsInnerPoint(rect, Point(200, 100))); // top edge excluded
-    EXPECT_FALSE(RectAlgorithm::IsInnerPoint(rect, Point(50, 200)));  // outside
-    EXPECT_FALSE(RectAlgorithm::IsInnerPoint(rect, Point(350, 200))); // outside
-
-    // IsPointOnEdge covers the border: edge and corner points
-    EXPECT_TRUE(RectAlgorithm::IsPointOnEdge(rect, Point(100, 100)));
-    EXPECT_TRUE(RectAlgorithm::IsPointOnEdge(rect, Point(300, 300)));
-    EXPECT_TRUE(RectAlgorithm::IsPointOnEdge(rect, Point(100, 200)));
-    EXPECT_TRUE(RectAlgorithm::IsPointOnEdge(rect, Point(200, 100)));
-    EXPECT_FALSE(RectAlgorithm::IsPointOnEdge(rect, Point(200, 200))); // inner point is not on edge
-    EXPECT_FALSE(RectAlgorithm::IsPointOnEdge(rect, Point(50, 200)));  // outside
-
-    // zero-area rect: no inner point
-    Rect zeroRect(100, 100, 100, 100);
-    EXPECT_FALSE(RectAlgorithm::IsInnerPoint(zeroRect, Point(100, 100)));
-    EXPECT_TRUE(RectAlgorithm::IsPointOnEdge(zeroRect, Point(100, 100)));
 }
 
 /** Cross-window: a widget in a higher-layer window occludes even with a lower widget z-index. */
@@ -2146,14 +2100,8 @@ TEST_F(FrontendApiHandlerIsReachableTest, componentIsReachableCrossWindowHigherL
             ]
         }
     )";
-    Window win0(12);
-    win0.displayId_ = 0;
-    win0.windowLayer_ = 1;
-    win0.bounds_ = Rect{0, 400, 0, 400};
-    Window win1(13);
-    win1.displayId_ = 0;
-    win1.windowLayer_ = 10;
-    win1.bounds_ = Rect{0, 400, 0, 400};
+    Window win0 = MakeTestWindow(TEST_WINDOW_ID, TEST_DISPLAY_ID, LOWER_WINDOW_LAYER);
+    Window win1 = MakeTestWindow(TEST_OCCLUDER_WINDOW_ID, TEST_DISPLAY_ID, HIGHER_WINDOW_LAYER);
     ApiReplyInfo reply;
     CallIsReachableTwoWindows(win0, targetTree, win1, occluderTree, "target", reply);
     ASSERT_EQ(NO_ERROR, reply.exception_.code_);
@@ -2185,14 +2133,8 @@ TEST_F(FrontendApiHandlerIsReachableTest, componentIsReachableCrossWindowLowerLa
             ]
         }
     )";
-    Window win0(12);
-    win0.displayId_ = 0;
-    win0.windowLayer_ = 10;
-    win0.bounds_ = Rect{0, 400, 0, 400};
-    Window win1(13);
-    win1.displayId_ = 0;
-    win1.windowLayer_ = 1;
-    win1.bounds_ = Rect{0, 400, 0, 400};
+    Window win0 = MakeTestWindow(TEST_WINDOW_ID, TEST_DISPLAY_ID, HIGHER_WINDOW_LAYER);
+    Window win1 = MakeTestWindow(TEST_OCCLUDER_WINDOW_ID, TEST_DISPLAY_ID, LOWER_WINDOW_LAYER);
     ApiReplyInfo reply;
     CallIsReachableTwoWindows(win0, targetTree, win1, occluderTree, "target", reply);
     ASSERT_EQ(NO_ERROR, reply.exception_.code_);
@@ -2223,14 +2165,8 @@ TEST_F(FrontendApiHandlerIsReachableTest, componentIsReachableCrossWindowSameZIn
             ]
         }
     )";
-    Window win0(12);
-    win0.displayId_ = 0;
-    win0.windowLayer_ = 1;
-    win0.bounds_ = Rect{0, 400, 0, 400};
-    Window win1(13);
-    win1.displayId_ = 0;
-    win1.windowLayer_ = 10;
-    win1.bounds_ = Rect{0, 400, 0, 400};
+    Window win0 = MakeTestWindow(TEST_WINDOW_ID, TEST_DISPLAY_ID, LOWER_WINDOW_LAYER);
+    Window win1 = MakeTestWindow(TEST_OCCLUDER_WINDOW_ID, TEST_DISPLAY_ID, HIGHER_WINDOW_LAYER);
     ApiReplyInfo reply;
     CallIsReachableTwoWindows(win0, targetTree, win1, occluderTree, "target", reply);
     ASSERT_EQ(NO_ERROR, reply.exception_.code_);
@@ -2253,8 +2189,7 @@ TEST_F(FrontendApiHandlerIsReachableTest, componentIsReachableTransparentOverlay
             ]
         }
     )";
-    Window win(12);
-    win.bounds_ = Rect{0, 400, 0, 400};
+    Window win = MakeTestWindow(TEST_WINDOW_ID, TEST_DISPLAY_ID, 0);
     ApiReplyInfo reply;
     CallIsReachable(win, tree, "target", reply);
     ASSERT_EQ(NO_ERROR, reply.exception_.code_);
@@ -2277,8 +2212,7 @@ TEST_F(FrontendApiHandlerIsReachableTest, componentIsReachableNoneOverlayNotOccl
             ]
         }
     )";
-    Window win(12);
-    win.bounds_ = Rect{0, 400, 0, 400};
+    Window win = MakeTestWindow(TEST_WINDOW_ID, TEST_DISPLAY_ID, 0);
     ApiReplyInfo reply;
     CallIsReachable(win, tree, "target", reply);
     ASSERT_EQ(NO_ERROR, reply.exception_.code_);
@@ -2301,8 +2235,7 @@ TEST_F(FrontendApiHandlerIsReachableTest, componentIsReachableBlockOverlayStillO
             ]
         }
     )";
-    Window win(12);
-    win.bounds_ = Rect{0, 400, 0, 400};
+    Window win = MakeTestWindow(TEST_WINDOW_ID, TEST_DISPLAY_ID, 0);
     ApiReplyInfo reply;
     CallIsReachable(win, tree, "target", reply);
     ASSERT_EQ(NO_ERROR, reply.exception_.code_);
@@ -2323,8 +2256,7 @@ TEST_F(FrontendApiHandlerIsReachableTest, componentIsReachableSelfHitTestModeNon
             ]
         }
     )";
-    Window win(12);
-    win.bounds_ = Rect{0, 400, 0, 400};
+    Window win = MakeTestWindow(TEST_WINDOW_ID, TEST_DISPLAY_ID, 0);
     ApiReplyInfo reply;
     CallIsReachable(win, tree, "target", reply);
     ASSERT_EQ(NO_ERROR, reply.exception_.code_);

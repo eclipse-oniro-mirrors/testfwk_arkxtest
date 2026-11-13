@@ -2157,8 +2157,8 @@ static void RegisterExtensionHandler()
     /** Whether the occluder widget covers the given center point (edge-inclusive). */
     static bool CoversCenterPoint(const Widget &occluder, const Point &center)
     {
-        return RectAlgorithm::IsInnerPoint(occluder.GetBounds(), center)
-            || RectAlgorithm::IsPointOnEdge(occluder.GetBounds(), center);
+        return RectAlgorithm::IsInnerPoint(occluder.GetBounds(), center) ||
+            RectAlgorithm::IsPointOnEdge(occluder.GetBounds(), center);
     }
 
     /** Cross-window case: the window layer decides the stacking relation between windows,
@@ -2209,6 +2209,37 @@ static void RegisterExtensionHandler()
         return -1;
     }
 
+    /** Check the self state of the snapshot (visibility / hit-test behavior / bounds area).
+     *  Fill the reply and return true if the reachability result is already decided. */
+    static bool CheckSelfStateAndReply(const Widget &snapshot, ApiReplyInfo &out)
+    {
+        if (!snapshot.IsVisible()) {
+            out.resultValue_ = false;
+            return true;
+        }
+        // a widget that does not respond to touch test can never be operated
+        if (snapshot.GetAttr(UiAttr::HITTESTBEHAVIOR) == "HitTestMode.None") {
+            out.resultValue_ = false;
+            return true;
+        }
+        if (snapshot.GetBounds().GetArea() <= 0) {
+            out.resultValue_ = false;
+            return true;
+        }
+        return false;
+    }
+
+    /** Fetch all visible widgets (across windows of the displays) for the occlusion check.
+     *  Returns false and fills the reply error when the traversal fails. */
+    static bool CollectAllVisibleWidgets(UiDriver &driver, vector<unique_ptr<Widget>> &widgets,
+        ApiReplyInfo &out)
+    {
+        WidgetSelector selector(true); // addVisibleMatcher = true
+        selector.SetWantMulti(true);
+        driver.FindWidgets(selector, widgets, out.exception_, true, true);
+        return out.exception_.code_ == NO_ERROR;
+    }
+
     /** Checks whether the center point of a component is reachable (not occluded). */
     static void ComponentIsReachableHandler(const ApiCallInfo &in, ApiReplyInfo &out)
     {
@@ -2220,31 +2251,18 @@ static void RegisterExtensionHandler()
             out.resultValue_ = nullptr;
             return;
         }
-        if (!snapshot->IsVisible()) {
-            out.resultValue_ = false;
+        if (CheckSelfStateAndReply(*snapshot, out)) {
             return;
         }
-        // a widget that does not respond to touch test can never be operated
-        if (snapshot->GetAttr(UiAttr::HITTESTBEHAVIOR) == "HitTestMode.None") {
-            out.resultValue_ = false;
-            return;
-        }
-        auto bounds = snapshot->GetBounds();
-        if (bounds.GetArea() <= 0) {
-            out.resultValue_ = false;
-            return;
-        }
+        const auto bounds = snapshot->GetBounds();
         Point center(bounds.GetCenterX(), bounds.GetCenterY());
         int32_t myZIndex = atoi(snapshot->GetAttr(UiAttr::ZINDEX).c_str());
         const auto myHostWindowId = snapshot->GetAttr(UiAttr::HOST_WINDOW_ID);
         const auto myDisplayId = snapshot->GetDisplayId();
         const int32_t myWindowLayer = driver.GetWindowLayer(atoi(myHostWindowId.c_str()), myDisplayId);
 
-        WidgetSelector selector(true); // addVisibleMatcher = true
-        selector.SetWantMulti(true);
         vector<unique_ptr<Widget>> allWidgets;
-        driver.FindWidgets(selector, allWidgets, out.exception_, true, true);
-        if (out.exception_.code_ != NO_ERROR) {
+        if (!CollectAllVisibleWidgets(driver, allWidgets, out)) {
             out.resultValue_ = nullptr;
             return;
         }

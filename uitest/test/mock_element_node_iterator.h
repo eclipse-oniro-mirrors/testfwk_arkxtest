@@ -62,53 +62,44 @@ namespace OHOS::uitest {
         }
     }
 
+    /** Read a json string field into the mock element member, if present. */
+    static void ReadStringField(const json &obj, const char *key,
+        std::string MockAccessibilityElementInfo::*field, MockAccessibilityElementInfo &info)
+    {
+        if (obj.find(key) != obj.end()) {
+            info.*field = obj[key];
+        }
+    }
+
+    /** Read a json "true"/"false" field into the mock element member, if present. */
+    static void ReadBoolField(const json &obj, const char *key,
+        bool MockAccessibilityElementInfo::*field, MockAccessibilityElementInfo &info)
+    {
+        if (obj.find(key) != obj.end()) {
+            info.*field = obj[key] == "true";
+        }
+    }
+
     static MockAccessibilityElementInfo WrapperJsonToElement(const json &obj)
     {
         MockAccessibilityElementInfo eleRoot;
-        if (obj.find("accessibilityId") != obj.end()) {
-            eleRoot.accessibilityId = obj["accessibilityId"];
-        }
-        if (obj.find("inspectorKey") != obj.end()) {
-            eleRoot.inspectorKey = obj["inspectorKey"];
-        }
-        if (obj.find("content") != obj.end()) {
-            eleRoot.content = obj["content"];
-        }
-        if (obj.find("componentType") != obj.end()) {
-            eleRoot.componentType = obj["componentType"];
-        }
-        if (obj.find("bundleName") != obj.end()) {
-            eleRoot.bundleName = obj["bundleName"];
-        }
-        if (obj.find("hierarchy") != obj.end()) {
-            eleRoot.hierarchy = obj["hierarchy"];
-        }
-        if (obj.find("enabled") != obj.end()) {
-            eleRoot.enabled = obj["enabled"] == "true" ? true : false;
-        }
-        if (obj.find("focused") != obj.end()) {
-            eleRoot.focused = obj["focused"] == "true" ? true : false;
-        }
-        if (obj.find("selected") != obj.end()) {
-            eleRoot.selected = obj["selected"] == "true" ? true : false;
-        }
-        if (obj.find("checkable") != obj.end()) {
-            eleRoot.checkable = obj["checkable"] == "true" ? true : false;
-        }
-        if (obj.find("checked") != obj.end()) {
-            eleRoot.checked = obj["checked"] == "true" ? true : false;
-        }
-        if (obj.find("windowId") != obj.end()) {
-            eleRoot.windowId = obj["windowId"];
-        }
+        ReadStringField(obj, "accessibilityId", &MockAccessibilityElementInfo::accessibilityId, eleRoot);
+        ReadStringField(obj, "inspectorKey", &MockAccessibilityElementInfo::inspectorKey, eleRoot);
+        ReadStringField(obj, "content", &MockAccessibilityElementInfo::content, eleRoot);
+        ReadStringField(obj, "componentType", &MockAccessibilityElementInfo::componentType, eleRoot);
+        ReadStringField(obj, "bundleName", &MockAccessibilityElementInfo::bundleName, eleRoot);
+        ReadStringField(obj, "windowId", &MockAccessibilityElementInfo::windowId, eleRoot);
+        ReadStringField(obj, "hitTestBehavior", &MockAccessibilityElementInfo::hitTestBehavior, eleRoot);
+        ReadBoolField(obj, "enabled", &MockAccessibilityElementInfo::enabled, eleRoot);
+        ReadBoolField(obj, "focused", &MockAccessibilityElementInfo::focused, eleRoot);
+        ReadBoolField(obj, "selected", &MockAccessibilityElementInfo::selected, eleRoot);
+        ReadBoolField(obj, "checkable", &MockAccessibilityElementInfo::checkable, eleRoot);
+        ReadBoolField(obj, "checked", &MockAccessibilityElementInfo::checked, eleRoot);
         if (obj.find("clip") != obj.end()) {
             eleRoot.clip = (obj["clip"] == "true");
         }
         if (obj.find("zIndex") != obj.end()) {
             eleRoot.zIndex = std::stoi(obj["zIndex"].get<std::string>());
-        }
-        if (obj.find("hitTestBehavior") != obj.end()) {
-            eleRoot.hitTestBehavior = obj["hitTestBehavior"];
         }
         if (obj.find("visible") != obj.end()) {
             eleRoot.visibleOverride = (obj["visible"] == "true") ? 1 : 0;
