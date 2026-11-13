@@ -55,6 +55,13 @@ namespace OHOS::uitest {
          **/
         int32_t GetWindowLayer(int32_t windowId, int32_t displayId) const;
 
+        /**Collect visible widgets from the windows (on the given display) whose bounds cover the given point.
+         * Windows whose bounds do not cover the point cannot contain a widget that occludes it, so only
+         * overlapping windows are traversed. The window cache must already be up-to-date (typically refreshed
+         * by a preceding RetrieveWidget call). */
+        void FindWidgetsCoveringPoint(const Point &point, int32_t displayId,
+            vector<unique_ptr<Widget>> &rev, ApiCallErr &err);
+
         string GetHostApp(const Widget &widget);
 
         /**Trigger the given key action. */

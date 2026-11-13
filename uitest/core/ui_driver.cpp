@@ -428,6 +428,36 @@ namespace OHOS::uitest {
         }
     }
 
+    void UiDriver::FindWidgetsCoveringPoint(const Point &point, int32_t displayId,
+        vector<unique_ptr<Widget>> &rev, ApiCallErr &err)
+    {
+        visitWidgets_.clear();
+        targetWidgetsIndex_.clear();
+        auto dm = displayToWindowCacheMap_.find(displayId);
+        if (dm == displayToWindowCacheMap_.end()) {
+            err = ApiCallErr(ERR_INTERNAL, "No window cache for the display");
+            return;
+        }
+        WidgetSelector selector(true);
+        selector.SetWantMulti(true);
+        for (auto &curWinCache : dm->second) {
+            const auto &winBounds = curWinCache.window_.bounds_;
+            if (!RectAlgorithm::IsInnerPoint(winBounds, point) &&
+                !RectAlgorithm::IsPointOnEdge(winBounds, point)) {
+                continue;
+            }
+            if (curWinCache.widgetIterator_ == nullptr &&
+                !uiController_->GetWidgetsInWindow(curWinCache.window_, curWinCache.widgetIterator_, mode_)) {
+                continue;
+            }
+            selector.Select(curWinCache.window_, *curWinCache.widgetIterator_, visitWidgets_, targetWidgetsIndex_);
+        }
+        for (auto targetIndex : targetWidgetsIndex_) {
+            auto image = CloneFreeWidget(visitWidgets_[targetIndex], selector.Describe());
+            rev.emplace_back(move(image));
+        }
+    }
+
     unique_ptr<Widget> UiDriver::WaitForWidget(const WidgetSelector &selector, const UiOpArgs &opt, ApiCallErr &err)
     {
         const uint32_t sliceMs = 20;

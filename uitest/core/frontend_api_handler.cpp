@@ -2228,17 +2228,6 @@ static void RegisterExtensionHandler()
         return false;
     }
 
-    /** Fetch all visible widgets (across windows of the displays) for the occlusion check.
-     *  Returns false and fills the reply error when the traversal fails. */
-    static bool CollectAllVisibleWidgets(UiDriver &driver, vector<unique_ptr<Widget>> &widgets,
-        ApiReplyInfo &out)
-    {
-        WidgetSelector selector(true);
-        selector.SetWantMulti(true);
-        driver.FindWidgets(selector, widgets, out.exception_, true, true);
-        return out.exception_.code_ == NO_ERROR;
-    }
-
     /** Checks whether the center point of a component is reachable (not occluded). */
     static void ComponentIsReachableHandler(const ApiCallInfo &in, ApiReplyInfo &out)
     {
@@ -2261,7 +2250,8 @@ static void RegisterExtensionHandler()
         const int32_t myWindowLayer = driver.GetWindowLayer(atoi(myHostWindowId.c_str()), myDisplayId);
 
         vector<unique_ptr<Widget>> allWidgets;
-        if (!CollectAllVisibleWidgets(driver, allWidgets, out)) {
+        driver.FindWidgetsCoveringPoint(center, myDisplayId, allWidgets, out.exception_);
+        if (out.exception_.code_ != NO_ERROR) {
             out.resultValue_ = nullptr;
             return;
         }
