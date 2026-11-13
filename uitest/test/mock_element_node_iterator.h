@@ -63,7 +63,7 @@ namespace OHOS::uitest {
     }
 
     /** Read a json string field into the mock element member, if present. */
-    static void ReadStringField(const json &obj, const char *key,
+    inline void ReadStringField(const json &obj, const char *key,
         std::string MockAccessibilityElementInfo::*field, MockAccessibilityElementInfo &info)
     {
         if (obj.find(key) != obj.end()) {
@@ -72,7 +72,7 @@ namespace OHOS::uitest {
     }
 
     /** Read a json "true"/"false" field into the mock element member, if present. */
-    static void ReadBoolField(const json &obj, const char *key,
+    inline void ReadBoolField(const json &obj, const char *key,
         bool MockAccessibilityElementInfo::*field, MockAccessibilityElementInfo &info)
     {
         if (obj.find(key) != obj.end()) {

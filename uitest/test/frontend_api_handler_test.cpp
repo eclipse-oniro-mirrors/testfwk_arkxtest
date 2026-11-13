@@ -1728,11 +1728,11 @@ protected:
         MockController *controller_ = nullptr;
 
         // shared window ids / display / stacking layers used by the isReachable test cases
-        static constexpr int32_t TEST_WINDOW_ID = 12;
-        static constexpr int32_t TEST_OCCLUDER_WINDOW_ID = 13;
-        static constexpr int32_t TEST_DISPLAY_ID = 0;
-        static constexpr int32_t LOWER_WINDOW_LAYER = 1;
-        static constexpr int32_t HIGHER_WINDOW_LAYER = 10;
+        static constexpr int32_t testWindowId = 12;
+        static constexpr int32_t testOccluderWindowId = 13;
+        static constexpr int32_t testDisplayId = 0;
+        static constexpr int32_t lowerWindowLayer = 1;
+        static constexpr int32_t higherWindowLayer = 10;
 
         /** Build a square test window with the given id, display and stacking layer. */
         static Window MakeTestWindow(int32_t id, int32_t displayId, int32_t layer)
@@ -1785,16 +1785,16 @@ TEST_F(FrontendApiHandlerIsReachableTest, componentIsReachableNotOccluded)
     // tree: root with two children; sibling does not cover the target center (200,200)
     const string tree = R"(
         {
-            "attributes":{"componentType":"Root","accessibilityId":"1","rectInScreen":"0,400,0,400"},
+            "attributes":{"componentType":"Root", "accessibilityId":"1", "rectInScreen":"0, 400, 0, 400"},
             "children":[
-                {"attributes":{"componentType":"Button","accessibilityId":"10","content":"target",
-                    "rectInScreen":"100,300,100,300","zIndex":"0"},"children":[]},
-                {"attributes":{"componentType":"Text","accessibilityId":"11","content":"other",
-                    "rectInScreen":"0,80,0,80","zIndex":"1"},"children":[]}
+                {"attributes":{"componentType":"Button", "accessibilityId":"10", "content":"target",
+                    "rectInScreen":"100, 300, 100, 300", "zIndex":"0"}, "children":[]},
+                {"attributes":{"componentType":"Text", "accessibilityId":"11", "content":"other",
+                    "rectInScreen":"0, 80, 0, 80", "zIndex":"1"}, "children":[]}
             ]
         }
     )";
-    Window win = MakeTestWindow(TEST_WINDOW_ID, TEST_DISPLAY_ID, 0);
+    Window win = MakeTestWindow(testWindowId, testDisplayId, 0);
     ApiReplyInfo reply;
     CallIsReachable(win, tree, "target", reply);
     ASSERT_EQ(NO_ERROR, reply.exception_.code_);
@@ -1808,16 +1808,16 @@ TEST_F(FrontendApiHandlerIsReachableTest, componentIsReachableOccludedByHigherZI
     // overlay z-index 1 covers the target center (200,200)
     const string tree = R"(
         {
-            "attributes":{"componentType":"Root","accessibilityId":"1","rectInScreen":"0,400,0,400"},
+            "attributes":{"componentType":"Root", "accessibilityId":"1", "rectInScreen":"0, 400, 0, 400"},
             "children":[
-                {"attributes":{"componentType":"Button","accessibilityId":"10","content":"target",
-                    "rectInScreen":"100,300,100,300","zIndex":"0"},"children":[]},
-                {"attributes":{"componentType":"Text","accessibilityId":"11","content":"overlay",
-                    "rectInScreen":"150,250,150,250","zIndex":"1"},"children":[]}
+                {"attributes":{"componentType":"Button", "accessibilityId":"10", "content":"target",
+                    "rectInScreen":"100, 300, 100, 300", "zIndex":"0"}, "children":[]},
+                {"attributes":{"componentType":"Text", "accessibilityId":"11", "content":"overlay",
+                    "rectInScreen":"150, 250, 150, 250", "zIndex":"1"}, "children":[]}
             ]
         }
     )";
-    Window win = MakeTestWindow(TEST_WINDOW_ID, TEST_DISPLAY_ID, 0);
+    Window win = MakeTestWindow(testWindowId, testDisplayId, 0);
     ApiReplyInfo reply;
     CallIsReachable(win, tree, "target", reply);
     ASSERT_EQ(NO_ERROR, reply.exception_.code_);
@@ -1831,16 +1831,16 @@ TEST_F(FrontendApiHandlerIsReachableTest, componentIsReachablePartialOcclusionCe
     // overlay covers only the corner [100,180], the center (200,200) is NOT covered
     const string tree = R"(
         {
-            "attributes":{"componentType":"Root","accessibilityId":"1","rectInScreen":"0,400,0,400"},
+            "attributes":{"componentType":"Root", "accessibilityId":"1", "rectInScreen":"0, 400, 0, 400"},
             "children":[
-                {"attributes":{"componentType":"Button","accessibilityId":"10","content":"target",
-                    "rectInScreen":"100,300,100,300","zIndex":"0"},"children":[]},
-                {"attributes":{"componentType":"Text","accessibilityId":"11","content":"partial",
-                    "rectInScreen":"100,180,100,180","zIndex":"1"},"children":[]}
+                {"attributes":{"componentType":"Button", "accessibilityId":"10", "content":"target",
+                    "rectInScreen":"100, 300, 100, 300", "zIndex":"0"}, "children":[]},
+                {"attributes":{"componentType":"Text", "accessibilityId":"11", "content":"partial",
+                    "rectInScreen":"100, 180, 100, 180", "zIndex":"1"}, "children":[]}
             ]
         }
     )";
-    Window win = MakeTestWindow(TEST_WINDOW_ID, TEST_DISPLAY_ID, 0);
+    Window win = MakeTestWindow(testWindowId, testDisplayId, 0);
     ApiReplyInfo reply;
     CallIsReachable(win, tree, "target", reply);
     ASSERT_EQ(NO_ERROR, reply.exception_.code_);
@@ -1854,25 +1854,24 @@ TEST_F(FrontendApiHandlerIsReachableTest, componentIsReachableInvisible)
     // step1: find the component in a normal tree
     const string treeBefore = R"(
         {
-            "attributes":{"componentType":"Root","accessibilityId":"1","rectInScreen":"0,400,0,400"},
+            "attributes":{"componentType":"Root", "accessibilityId":"1", "rectInScreen":"0, 400, 0, 400"},
             "children":[
-                {"attributes":{"componentType":"Button","accessibilityId":"10","content":"target",
-                    "rectInScreen":"100,300,100,300","zIndex":"0"},"children":[]}
+                {"attributes":{"componentType":"Button", "accessibilityId":"10", "content":"target",
+                    "rectInScreen":"100, 300, 100, 300", "zIndex":"0"}, "children":[]}
             ]
         }
     )";
     // step2: flip the target to invisible at runtime (explicit visible=false, non-zero bounds)
     const string treeAfter = R"(
         {
-            "attributes":{"componentType":"Root","accessibilityId":"1","rectInScreen":"0,400,0,400"},
+            "attributes":{"componentType":"Root", "accessibilityId":"1", "rectInScreen":"0, 400, 0, 400"},
             "children":[
-                {"attributes":{"componentType":"Button","accessibilityId":"10","content":"target",
-                    "rectInScreen":"100,300,100,300","zIndex":"0","visible":"false"},"children":[]}
+                {"attributes":{"componentType":"Button", "accessibilityId":"10", "content":"target",
+                    "rectInScreen":"100, 300, 100, 300", "zIndex":"0", "visible":"false"}, "children":[]}
             ]
         }
     )";
-    Window win(12);
-    win.bounds_ = Rect{0, 400, 0, 400};
+    Window win = MakeTestWindow(testWindowId, testDisplayId, 0);
     const auto componentRef = FindTargetComponent(win, treeBefore);
     ApiReplyInfo replyAfter;
     FlipTreeAndCheckReachable(win, treeAfter, componentRef, replyAfter);
@@ -1891,25 +1890,24 @@ TEST_F(FrontendApiHandlerIsReachableTest, componentIsReachableZeroArea)
     // step1: find the component in a normal tree
     const string treeBefore = R"(
         {
-            "attributes":{"componentType":"Root","accessibilityId":"1","rectInScreen":"0,400,0,400"},
+            "attributes":{"componentType":"Root", "accessibilityId":"1", "rectInScreen":"0, 400, 0, 400"},
             "children":[
-                {"attributes":{"componentType":"Button","accessibilityId":"10","content":"target",
-                    "rectInScreen":"100,300,100,300","zIndex":"0"},"children":[]}
+                {"attributes":{"componentType":"Button", "accessibilityId":"10", "content":"target",
+                    "rectInScreen":"100, 300, 100, 300", "zIndex":"0"}, "children":[]}
             ]
         }
     )";
     // step2: shrink the target bounds to zero area at runtime
     const string treeAfter = R"(
         {
-            "attributes":{"componentType":"Root","accessibilityId":"1","rectInScreen":"0,400,0,400"},
+            "attributes":{"componentType":"Root", "accessibilityId":"1", "rectInScreen":"0, 400, 0, 400"},
             "children":[
-                {"attributes":{"componentType":"Button","accessibilityId":"10","content":"target",
-                    "rectInScreen":"100,100,100,100","zIndex":"0"},"children":[]}
+                {"attributes":{"componentType":"Button", "accessibilityId":"10", "content":"target",
+                    "rectInScreen":"100, 100, 100, 100", "zIndex":"0"}, "children":[]}
             ]
         }
     )";
-    Window win(12);
-    win.bounds_ = Rect{0, 400, 0, 400};
+    Window win = MakeTestWindow(testWindowId, testDisplayId, 0);
     const auto componentRef = FindTargetComponent(win, treeBefore);
     ApiReplyInfo replyAfter;
     FlipTreeAndCheckReachable(win, treeAfter, componentRef, replyAfter);
@@ -1927,15 +1925,14 @@ TEST_F(FrontendApiHandlerIsReachableTest, componentIsReachableComponentLost)
 {
     const string tree = R"(
         {
-            "attributes":{"componentType":"Root","accessibilityId":"1","rectInScreen":"0,400,0,400"},
+            "attributes":{"componentType":"Root", "accessibilityId":"1", "rectInScreen":"0, 400, 0, 400"},
             "children":[
-                {"attributes":{"componentType":"Button","accessibilityId":"10","content":"target",
-                    "rectInScreen":"100,300,100,300","zIndex":"0"},"children":[]}
+                {"attributes":{"componentType":"Button", "accessibilityId":"10", "content":"target",
+                    "rectInScreen":"100, 300, 100, 300", "zIndex":"0"}, "children":[]}
             ]
         }
     )";
-    Window win(12);
-    win.bounds_ = Rect{0, 400, 0, 400};
+    Window win = MakeTestWindow(testWindowId, testDisplayId, 0);
     const auto componentRef = FindTargetComponent(win, tree);
     const auto &server = FrontendApiServer::Get();
     // the window stays but the component is gone, then isReachable should deliver 17000004
@@ -1955,16 +1952,16 @@ TEST_F(FrontendApiHandlerIsReachableTest, componentIsReachableSameZIndexLaterSib
     // so it is drawn later and stacks on top of the target
     const string tree = R"(
         {
-            "attributes":{"componentType":"Root","accessibilityId":"1","rectInScreen":"0,400,0,400"},
+            "attributes":{"componentType":"Root", "accessibilityId":"1", "rectInScreen":"0, 400, 0, 400"},
             "children":[
-                {"attributes":{"componentType":"Button","accessibilityId":"10","content":"target",
-                    "rectInScreen":"100,300,100,300","zIndex":"0"},"children":[]},
-                {"attributes":{"componentType":"Text","accessibilityId":"11","content":"overlay",
-                    "rectInScreen":"150,250,150,250","zIndex":"0"},"children":[]}
+                {"attributes":{"componentType":"Button", "accessibilityId":"10", "content":"target",
+                    "rectInScreen":"100, 300, 100, 300", "zIndex":"0"}, "children":[]},
+                {"attributes":{"componentType":"Text", "accessibilityId":"11", "content":"overlay",
+                    "rectInScreen":"150, 250, 150, 250", "zIndex":"0"}, "children":[]}
             ]
         }
     )";
-    Window win = MakeTestWindow(TEST_WINDOW_ID, TEST_DISPLAY_ID, 0);
+    Window win = MakeTestWindow(testWindowId, testDisplayId, 0);
     ApiReplyInfo reply;
     CallIsReachable(win, tree, "target", reply);
     ASSERT_EQ(NO_ERROR, reply.exception_.code_);
@@ -1979,16 +1976,16 @@ TEST_F(FrontendApiHandlerIsReachableTest, componentIsReachableSameZIndexEarlierS
     // so the target is drawn later and stacks on top of the sibling
     const string tree = R"(
         {
-            "attributes":{"componentType":"Root","accessibilityId":"1","rectInScreen":"0,400,0,400"},
+            "attributes":{"componentType":"Root", "accessibilityId":"1", "rectInScreen":"0, 400, 0, 400"},
             "children":[
-                {"attributes":{"componentType":"Text","accessibilityId":"11","content":"underlay",
-                    "rectInScreen":"150,250,150,250","zIndex":"0"},"children":[]},
-                {"attributes":{"componentType":"Button","accessibilityId":"10","content":"target",
-                    "rectInScreen":"100,300,100,300","zIndex":"0"},"children":[]}
+                {"attributes":{"componentType":"Text", "accessibilityId":"11", "content":"underlay",
+                    "rectInScreen":"150, 250, 150, 250", "zIndex":"0"}, "children":[]},
+                {"attributes":{"componentType":"Button", "accessibilityId":"10", "content":"target",
+                    "rectInScreen":"100, 300, 100, 300", "zIndex":"0"}, "children":[]}
             ]
         }
     )";
-    Window win = MakeTestWindow(TEST_WINDOW_ID, TEST_DISPLAY_ID, 0);
+    Window win = MakeTestWindow(testWindowId, testDisplayId, 0);
     ApiReplyInfo reply;
     CallIsReachable(win, tree, "target", reply);
     ASSERT_EQ(NO_ERROR, reply.exception_.code_);
@@ -2003,16 +2000,16 @@ TEST_F(FrontendApiHandlerIsReachableTest, componentIsReachableCenterOnOccluderEd
     // the target center (200,200) → occluded (edge-inclusive)
     const string tree = R"(
         {
-            "attributes":{"componentType":"Root","accessibilityId":"1","rectInScreen":"0,400,0,400"},
+            "attributes":{"componentType":"Root", "accessibilityId":"1", "rectInScreen":"0, 400, 0, 400"},
             "children":[
-                {"attributes":{"componentType":"Button","accessibilityId":"10","content":"target",
-                    "rectInScreen":"100,300,100,300","zIndex":"0"},"children":[]},
-                {"attributes":{"componentType":"Text","accessibilityId":"11","content":"overlay",
-                    "rectInScreen":"100,200,100,300","zIndex":"1"},"children":[]}
+                {"attributes":{"componentType":"Button", "accessibilityId":"10", "content":"target",
+                    "rectInScreen":"100, 300, 100, 300", "zIndex":"0"}, "children":[]},
+                {"attributes":{"componentType":"Text", "accessibilityId":"11", "content":"overlay",
+                    "rectInScreen":"100, 200, 100, 300", "zIndex":"1"}, "children":[]}
             ]
         }
     )";
-    Window win = MakeTestWindow(TEST_WINDOW_ID, TEST_DISPLAY_ID, 0);
+    Window win = MakeTestWindow(testWindowId, testDisplayId, 0);
     ApiReplyInfo reply;
     CallIsReachable(win, tree, "target", reply);
     ASSERT_EQ(NO_ERROR, reply.exception_.code_);
@@ -2027,25 +2024,27 @@ TEST_F(FrontendApiHandlerIsReachableTest, componentIsReachableDifferentDisplayNo
     // with identical local coordinates — it must not occlude the target (local coords overlap)
     const string targetTree = R"(
         {
-            "attributes":{"componentType":"Root","accessibilityId":"1","windowId":"12","rectInScreen":"0, 400, 0, 400"},
+            "attributes":{"componentType":"Root", "accessibilityId":"1", "windowId":"12",
+                "rectInScreen":"0, 400, 0, 400"},
             "children":[
-                {"attributes":{"componentType":"Button","accessibilityId":"10","content":"target",
-                    "windowId":"12","rectInScreen":"100, 300, 100, 300","zIndex":"0"},"children":[]}
+                {"attributes":{"componentType":"Button", "accessibilityId":"10", "content":"target",
+                    "windowId":"12", "rectInScreen":"100, 300, 100, 300", "zIndex":"0"}, "children":[]}
             ]
         }
     )";
     const string otherTree = R"(
         {
-            "attributes":{"componentType":"Root","accessibilityId":"2","windowId":"13","rectInScreen":"0, 400, 0, 400"},
+            "attributes":{"componentType":"Root", "accessibilityId":"2", "windowId":"13",
+                "rectInScreen":"0, 400, 0, 400"},
             "children":[
-                {"attributes":{"componentType":"Text","accessibilityId":"20","content":"otherdisplay",
-                    "windowId":"13","rectInScreen":"150, 250, 150, 250","zIndex":"1"},"children":[]}
+                {"attributes":{"componentType":"Text", "accessibilityId":"20", "content":"otherdisplay",
+                    "windowId":"13", "rectInScreen":"150, 250, 150, 250", "zIndex":"1"}, "children":[]}
             ]
         }
     )";
     constexpr int32_t secondDisplayId = 1;
-    Window win0 = MakeTestWindow(TEST_WINDOW_ID, TEST_DISPLAY_ID, 0);
-    Window win1 = MakeTestWindow(TEST_OCCLUDER_WINDOW_ID, secondDisplayId, 0);
+    Window win0 = MakeTestWindow(testWindowId, testDisplayId, 0);
+    Window win1 = MakeTestWindow(testOccluderWindowId, secondDisplayId, 0);
     ApiReplyInfo reply;
     CallIsReachableTwoWindows(win0, targetTree, win1, otherTree, "target", reply);
     ASSERT_EQ(NO_ERROR, reply.exception_.code_);
@@ -2059,16 +2058,16 @@ TEST_F(FrontendApiHandlerIsReachableTest, componentIsReachableLowerZIndexNotOccl
     // target z-index 1; overlay z-index 0 covers the target center — lower z never occludes
     const string tree = R"(
         {
-            "attributes":{"componentType":"Root","accessibilityId":"1","rectInScreen":"0,400,0,400"},
+            "attributes":{"componentType":"Root", "accessibilityId":"1", "rectInScreen":"0, 400, 0, 400"},
             "children":[
-                {"attributes":{"componentType":"Button","accessibilityId":"10","content":"target",
-                    "rectInScreen":"100,300,100,300","zIndex":"1"},"children":[]},
-                {"attributes":{"componentType":"Text","accessibilityId":"11","content":"underlay",
-                    "rectInScreen":"150,250,150,250","zIndex":"0"},"children":[]}
+                {"attributes":{"componentType":"Button", "accessibilityId":"10", "content":"target",
+                    "rectInScreen":"100, 300, 100, 300", "zIndex":"1"}, "children":[]},
+                {"attributes":{"componentType":"Text", "accessibilityId":"11", "content":"underlay",
+                    "rectInScreen":"150, 250, 150, 250", "zIndex":"0"}, "children":[]}
             ]
         }
     )";
-    Window win = MakeTestWindow(TEST_WINDOW_ID, TEST_DISPLAY_ID, 0);
+    Window win = MakeTestWindow(testWindowId, testDisplayId, 0);
     ApiReplyInfo reply;
     CallIsReachable(win, tree, "target", reply);
     ASSERT_EQ(NO_ERROR, reply.exception_.code_);
@@ -2084,24 +2083,26 @@ TEST_F(FrontendApiHandlerIsReachableTest, componentIsReachableCrossWindowHigherL
     // the window layer decides the stacking: the occluder stacks higher and occludes.
     const string targetTree = R"(
         {
-            "attributes":{"componentType":"Root","accessibilityId":"1","windowId":"12","rectInScreen":"0,400,0,400"},
+            "attributes":{"componentType":"Root", "accessibilityId":"1", "windowId":"12",
+                "rectInScreen":"0, 400, 0, 400"},
             "children":[
-                {"attributes":{"componentType":"Button","accessibilityId":"10","content":"target",
-                    "windowId":"12","rectInScreen":"100,300,100,300","zIndex":"100"},"children":[]}
+                {"attributes":{"componentType":"Button", "accessibilityId":"10", "content":"target",
+                    "windowId":"12", "rectInScreen":"100, 300, 100, 300", "zIndex":"100"}, "children":[]}
             ]
         }
     )";
     const string occluderTree = R"(
         {
-            "attributes":{"componentType":"Root","accessibilityId":"2","windowId":"13","rectInScreen":"0,400,0,400"},
+            "attributes":{"componentType":"Root", "accessibilityId":"2", "windowId":"13",
+                "rectInScreen":"0, 400, 0, 400"},
             "children":[
-                {"attributes":{"componentType":"Text","accessibilityId":"20","content":"floatlayer",
-                    "windowId":"13","rectInScreen":"150,250,150,250","zIndex":"0"},"children":[]}
+                {"attributes":{"componentType":"Text", "accessibilityId":"20", "content":"floatlayer",
+                    "windowId":"13", "rectInScreen":"150, 250, 150, 250", "zIndex":"0"}, "children":[]}
             ]
         }
     )";
-    Window win0 = MakeTestWindow(TEST_WINDOW_ID, TEST_DISPLAY_ID, LOWER_WINDOW_LAYER);
-    Window win1 = MakeTestWindow(TEST_OCCLUDER_WINDOW_ID, TEST_DISPLAY_ID, HIGHER_WINDOW_LAYER);
+    Window win0 = MakeTestWindow(testWindowId, testDisplayId, lowerWindowLayer);
+    Window win1 = MakeTestWindow(testOccluderWindowId, testDisplayId, higherWindowLayer);
     ApiReplyInfo reply;
     CallIsReachableTwoWindows(win0, targetTree, win1, occluderTree, "target", reply);
     ASSERT_EQ(NO_ERROR, reply.exception_.code_);
@@ -2117,24 +2118,26 @@ TEST_F(FrontendApiHandlerIsReachableTest, componentIsReachableCrossWindowLowerLa
     // lives in window 12 (layer 10). The window layer decides: the occluder is below the target.
     const string targetTree = R"(
         {
-            "attributes":{"componentType":"Root","accessibilityId":"1","windowId":"12","rectInScreen":"0,400,0,400"},
+            "attributes":{"componentType":"Root", "accessibilityId":"1", "windowId":"12",
+                "rectInScreen":"0, 400, 0, 400"},
             "children":[
-                {"attributes":{"componentType":"Button","accessibilityId":"10","content":"target",
-                    "windowId":"12","rectInScreen":"100,300,100,300","zIndex":"0"},"children":[]}
+                {"attributes":{"componentType":"Button", "accessibilityId":"10", "content":"target",
+                    "windowId":"12", "rectInScreen":"100, 300, 100, 300", "zIndex":"0"}, "children":[]}
             ]
         }
     )";
     const string occluderTree = R"(
         {
-            "attributes":{"componentType":"Root","accessibilityId":"2","windowId":"13","rectInScreen":"0,400,0,400"},
+            "attributes":{"componentType":"Root", "accessibilityId":"2", "windowId":"13",
+                "rectInScreen":"0, 400, 0, 400"},
             "children":[
-                {"attributes":{"componentType":"Text","accessibilityId":"20","content":"underwindow",
-                    "windowId":"13","rectInScreen":"150,250,150,250","zIndex":"100"},"children":[]}
+                {"attributes":{"componentType":"Text", "accessibilityId":"20", "content":"underwindow",
+                    "windowId":"13", "rectInScreen":"150, 250, 150, 250", "zIndex":"100"}, "children":[]}
             ]
         }
     )";
-    Window win0 = MakeTestWindow(TEST_WINDOW_ID, TEST_DISPLAY_ID, HIGHER_WINDOW_LAYER);
-    Window win1 = MakeTestWindow(TEST_OCCLUDER_WINDOW_ID, TEST_DISPLAY_ID, LOWER_WINDOW_LAYER);
+    Window win0 = MakeTestWindow(testWindowId, testDisplayId, higherWindowLayer);
+    Window win1 = MakeTestWindow(testOccluderWindowId, testDisplayId, lowerWindowLayer);
     ApiReplyInfo reply;
     CallIsReachableTwoWindows(win0, targetTree, win1, occluderTree, "target", reply);
     ASSERT_EQ(NO_ERROR, reply.exception_.code_);
@@ -2149,24 +2152,26 @@ TEST_F(FrontendApiHandlerIsReachableTest, componentIsReachableCrossWindowSameZIn
     // target center → occluded. (Traversal-order approximation would flip this direction.)
     const string targetTree = R"(
         {
-            "attributes":{"componentType":"Root","accessibilityId":"1","windowId":"12","rectInScreen":"0,400,0,400"},
+            "attributes":{"componentType":"Root", "accessibilityId":"1", "windowId":"12",
+                "rectInScreen":"0, 400, 0, 400"},
             "children":[
-                {"attributes":{"componentType":"Button","accessibilityId":"10","content":"target",
-                    "windowId":"12","rectInScreen":"100,300,100,300","zIndex":"0"},"children":[]}
+                {"attributes":{"componentType":"Button", "accessibilityId":"10", "content":"target",
+                    "windowId":"12", "rectInScreen":"100, 300, 100, 300", "zIndex":"0"}, "children":[]}
             ]
         }
     )";
     const string occluderTree = R"(
         {
-            "attributes":{"componentType":"Root","accessibilityId":"2","windowId":"13","rectInScreen":"0,400,0,400"},
+            "attributes":{"componentType":"Root", "accessibilityId":"2", "windowId":"13",
+                "rectInScreen":"0, 400, 0, 400"},
             "children":[
-                {"attributes":{"componentType":"Text","accessibilityId":"20","content":"dialogcover",
-                    "windowId":"13","rectInScreen":"150,250,150,250","zIndex":"0"},"children":[]}
+                {"attributes":{"componentType":"Text", "accessibilityId":"20", "content":"dialogcover",
+                    "windowId":"13", "rectInScreen":"150, 250, 150, 250", "zIndex":"0"}, "children":[]}
             ]
         }
     )";
-    Window win0 = MakeTestWindow(TEST_WINDOW_ID, TEST_DISPLAY_ID, LOWER_WINDOW_LAYER);
-    Window win1 = MakeTestWindow(TEST_OCCLUDER_WINDOW_ID, TEST_DISPLAY_ID, HIGHER_WINDOW_LAYER);
+    Window win0 = MakeTestWindow(testWindowId, testDisplayId, lowerWindowLayer);
+    Window win1 = MakeTestWindow(testOccluderWindowId, testDisplayId, higherWindowLayer);
     ApiReplyInfo reply;
     CallIsReachableTwoWindows(win0, targetTree, win1, occluderTree, "target", reply);
     ASSERT_EQ(NO_ERROR, reply.exception_.code_);
@@ -2179,17 +2184,17 @@ TEST_F(FrontendApiHandlerIsReachableTest, componentIsReachableTransparentOverlay
 {
     const string tree = R"(
         {
-            "attributes":{"componentType":"Root","accessibilityId":"1","rectInScreen":"0,400,0,400"},
+            "attributes":{"componentType":"Root", "accessibilityId":"1", "rectInScreen":"0, 400, 0, 400"},
             "children":[
-                {"attributes":{"componentType":"Button","accessibilityId":"10","content":"target",
-                    "rectInScreen":"100,300,100,300","zIndex":"0"},"children":[]},
-                {"attributes":{"componentType":"Text","accessibilityId":"11","content":"overlay",
-                    "rectInScreen":"150,250,150,250","zIndex":"1",
-                    "hitTestBehavior":"HitTestMode.Transparent"},"children":[]}
+                {"attributes":{"componentType":"Button", "accessibilityId":"10", "content":"target",
+                    "rectInScreen":"100, 300, 100, 300", "zIndex":"0"}, "children":[]},
+                {"attributes":{"componentType":"Text", "accessibilityId":"11", "content":"overlay",
+                    "rectInScreen":"150, 250, 150, 250", "zIndex":"1",
+                    "hitTestBehavior":"HitTestMode.Transparent"}, "children":[]}
             ]
         }
     )";
-    Window win = MakeTestWindow(TEST_WINDOW_ID, TEST_DISPLAY_ID, 0);
+    Window win = MakeTestWindow(testWindowId, testDisplayId, 0);
     ApiReplyInfo reply;
     CallIsReachable(win, tree, "target", reply);
     ASSERT_EQ(NO_ERROR, reply.exception_.code_);
@@ -2202,17 +2207,17 @@ TEST_F(FrontendApiHandlerIsReachableTest, componentIsReachableNoneOverlayNotOccl
 {
     const string tree = R"(
         {
-            "attributes":{"componentType":"Root","accessibilityId":"1","rectInScreen":"0,400,0,400"},
+            "attributes":{"componentType":"Root", "accessibilityId":"1", "rectInScreen":"0, 400, 0, 400"},
             "children":[
-                {"attributes":{"componentType":"Button","accessibilityId":"10","content":"target",
-                    "rectInScreen":"100,300,100,300","zIndex":"0"},"children":[]},
-                {"attributes":{"componentType":"Text","accessibilityId":"11","content":"overlay",
-                    "rectInScreen":"150,250,150,250","zIndex":"1",
-                    "hitTestBehavior":"HitTestMode.None"},"children":[]}
+                {"attributes":{"componentType":"Button", "accessibilityId":"10", "content":"target",
+                    "rectInScreen":"100, 300, 100, 300", "zIndex":"0"}, "children":[]},
+                {"attributes":{"componentType":"Text", "accessibilityId":"11", "content":"overlay",
+                    "rectInScreen":"150, 250, 150, 250", "zIndex":"1",
+                    "hitTestBehavior":"HitTestMode.None"}, "children":[]}
             ]
         }
     )";
-    Window win = MakeTestWindow(TEST_WINDOW_ID, TEST_DISPLAY_ID, 0);
+    Window win = MakeTestWindow(testWindowId, testDisplayId, 0);
     ApiReplyInfo reply;
     CallIsReachable(win, tree, "target", reply);
     ASSERT_EQ(NO_ERROR, reply.exception_.code_);
@@ -2225,17 +2230,17 @@ TEST_F(FrontendApiHandlerIsReachableTest, componentIsReachableBlockOverlayStillO
 {
     const string tree = R"(
         {
-            "attributes":{"componentType":"Root","accessibilityId":"1","rectInScreen":"0,400,0,400"},
+            "attributes":{"componentType":"Root", "accessibilityId":"1", "rectInScreen":"0, 400, 0, 400"},
             "children":[
-                {"attributes":{"componentType":"Button","accessibilityId":"10","content":"target",
-                    "rectInScreen":"100,300,100,300","zIndex":"0"},"children":[]},
-                {"attributes":{"componentType":"Text","accessibilityId":"11","content":"overlay",
-                    "rectInScreen":"150,250,150,250","zIndex":"1",
-                    "hitTestBehavior":"HitTestMode.Block"},"children":[]}
+                {"attributes":{"componentType":"Button", "accessibilityId":"10", "content":"target",
+                    "rectInScreen":"100, 300, 100, 300", "zIndex":"0"}, "children":[]},
+                {"attributes":{"componentType":"Text", "accessibilityId":"11", "content":"overlay",
+                    "rectInScreen":"150, 250, 150, 250", "zIndex":"1",
+                    "hitTestBehavior":"HitTestMode.Block"}, "children":[]}
             ]
         }
     )";
-    Window win = MakeTestWindow(TEST_WINDOW_ID, TEST_DISPLAY_ID, 0);
+    Window win = MakeTestWindow(testWindowId, testDisplayId, 0);
     ApiReplyInfo reply;
     CallIsReachable(win, tree, "target", reply);
     ASSERT_EQ(NO_ERROR, reply.exception_.code_);
@@ -2248,15 +2253,15 @@ TEST_F(FrontendApiHandlerIsReachableTest, componentIsReachableSelfHitTestModeNon
 {
     const string tree = R"(
         {
-            "attributes":{"componentType":"Root","accessibilityId":"1","rectInScreen":"0,400,0,400"},
+            "attributes":{"componentType":"Root", "accessibilityId":"1", "rectInScreen":"0, 400, 0, 400"},
             "children":[
-                {"attributes":{"componentType":"Button","accessibilityId":"10","content":"target",
-                    "rectInScreen":"100,300,100,300","zIndex":"0",
-                    "hitTestBehavior":"HitTestMode.None"},"children":[]}
+                {"attributes":{"componentType":"Button", "accessibilityId":"10", "content":"target",
+                    "rectInScreen":"100, 300, 100, 300", "zIndex":"0",
+                    "hitTestBehavior":"HitTestMode.None"}, "children":[]}
             ]
         }
     )";
-    Window win = MakeTestWindow(TEST_WINDOW_ID, TEST_DISPLAY_ID, 0);
+    Window win = MakeTestWindow(testWindowId, testDisplayId, 0);
     ApiReplyInfo reply;
     CallIsReachable(win, tree, "target", reply);
     ASSERT_EQ(NO_ERROR, reply.exception_.code_);
