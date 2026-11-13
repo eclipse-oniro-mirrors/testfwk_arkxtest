@@ -319,6 +319,20 @@ namespace OHOS::uitest {
         return CheckRetrievedWidget(widget, visitWidgets_, targetWidgetsIndex_, err);
     }
 
+    int32_t UiDriver::GetWindowLayer(int32_t windowId, int32_t displayId) const
+    {
+        auto cacheIter = displayToWindowCacheMap_.find(displayId);
+        if (cacheIter == displayToWindowCacheMap_.end()) {
+            return -1;
+        }
+        for (const auto &windowCache : cacheIter->second) {
+            if (windowCache.window_.id_ == windowId) {
+                return windowCache.window_.windowLayer_;
+            }
+        }
+        return -1;
+    }
+
     void UiDriver::TriggerKey(const KeyAction &key, const UiOpArgs &opt, ApiCallErr &error, int32_t displayId)
     {
         if (!CheckStatus(false, error)) {

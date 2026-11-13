@@ -121,15 +121,13 @@ namespace OHOS::uitest {
         void GetUiWindows(std::map<int32_t, vector<Window>> &out, int32_t targetDisplay,
             bool skipWaitForUiSteady, bool needAbilityInfo) override
         {
-            vector<Window> winInfos;
             for (auto iter = testIn.cbegin(); iter != testIn.cend(); ++iter) {
                 Window win = iter->second;
                 if (targetDisplay != -1 && win.displayId_ != targetDisplay) {
                     continue;
                 }
-                winInfos.emplace_back(win);
+                out[win.displayId_].emplace_back(win);
             }
-            out.insert(make_pair(targetDisplay, move(winInfos)));
             auto userIdIt = displayToUserMap_.find(targetDisplay);
             if (userIdIt != displayToUserMap_.end()) {
                 currentUser_ = userIdIt->second;

@@ -49,6 +49,12 @@ namespace OHOS::uitest {
         /**Retrieve window from updated UI.*/
         Window *RetrieveWindow(const Window &window, ApiCallErr &err);
 
+        /**Get the stacking layer of the window with the given id on the given display.
+         * Larger layer means the window stacks higher on screen.
+         * @returns -1 if the window is not found in the current window cache.
+         **/
+        int32_t GetWindowLayer(int32_t windowId, int32_t displayId) const;
+
         string GetHostApp(const Widget &widget);
 
         /**Trigger the given key action. */

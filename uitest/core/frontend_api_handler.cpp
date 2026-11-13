@@ -2147,42 +2147,43 @@ static void RegisterExtensionHandler()
     server.AddHandler("Driver.OpenAamsEvent", genericOpenAamsEventHandler);
 }
 
-    /** Checks whether the center point of a component is reachable (not occluded by higher z-index). */
+    /** Checks whether the center point of a component is reachable (not occluded). */
     static void ComponentIsReachableHandler(const ApiCallInfo &in, ApiReplyInfo &out)
     {
         auto &image = GetBackendObject<Widget>(in.callerObjRef_);
         auto &driver = GetBoundUiDriver(in.callerObjRef_);
 
-        // 1. Retrieve latest widget snapshot (throws 17000004 if gone, spec R-3)
         auto snapshot = driver.RetrieveWidget(image, out.exception_);
         if (out.exception_.code_ != NO_ERROR) {
             out.resultValue_ = nullptr;
             return;
         }
 
-        // 2. visible=false → false (spec R-7)
         if (!snapshot->IsVisible()) {
             out.resultValue_ = false;
             return;
         }
 
-        // 3. zero-area bounds → false (spec R-8)
-        auto bounds = snapshot->GetBounds();
-        if (bounds.GetArea() == 0) {
+        // A widget that does not respond to touch test can never be operated.
+        if (snapshot->GetAttr(UiAttr::HITTESTBEHAVIOR) == "HitTestMode.None") {
             out.resultValue_ = false;
             return;
         }
 
-        // 4. Compute center point
+        auto bounds = snapshot->GetBounds();
+        if (bounds.GetArea() <= 0) {
+            out.resultValue_ = false;
+            return;
+        }
+
         Point center(bounds.GetCenterX(), bounds.GetCenterY());
 
-        // 5. Get own z-index (defaults to 0 on parse failure) and own identity for self-exclusion
         int32_t myZIndex = atoi(snapshot->GetAttr(UiAttr::ZINDEX).c_str());
         const auto myHierarchy = snapshot->GetHierarchy();
         const auto myHostWindowId = snapshot->GetAttr(UiAttr::HOST_WINDOW_ID);
         const auto myDisplayId = snapshot->GetDisplayId();
+        const int32_t myWindowLayer = driver.GetWindowLayer(atoi(myHostWindowId.c_str()), myDisplayId);
 
-        // 6. Get all visible widgets (for occlusion check)
         WidgetSelector selector(true); // addVisibleMatcher = true
         selector.SetWantMulti(true);
         vector<unique_ptr<Widget>> allWidgets;
@@ -2192,8 +2193,9 @@ static void RegisterExtensionHandler()
             return;
         }
 
-        // 7. Locate self in the traversal result by hierarchy + hostWindowId. The traversal index
-        // reflects the drawing order: widgets visited later are drawn later and stack on top.
+        // Locate self in the traversal result by hierarchy + hostWindowId. Within one window the
+        // traversal order follows the widget tree order (drawing order): widgets visited later are
+        // drawn later and stack on top.
         int64_t myIndex = -1;
         for (size_t idx = 0; idx < allWidgets.size(); idx++) {
             const auto &widget = allWidgets[idx];
@@ -2203,10 +2205,11 @@ static void RegisterExtensionHandler()
                 break;
             }
         }
+        if (myIndex < 0) {
+            LOG_W("isReachable: failed to locate widget %{public}s in traversal result, "
+                "same-zindex occlusion check will be skipped", myHierarchy.c_str());
+        }
 
-        // 8. Check occlusion (spec R-1/R-2/R-6): any same-display widget with higher z-index covering
-        // the center point occludes; with equal z-index, only widgets drawn later (later in traversal
-        // order) occlude (ADR-4); the center point on the occluder's edge counts as occluded.
         for (size_t idx = 0; idx < allWidgets.size(); idx++) {
             auto &other = allWidgets[idx];
             if (static_cast<int64_t>(idx) == myIndex) {
@@ -2218,12 +2221,30 @@ static void RegisterExtensionHandler()
             if (!other->IsVisible()) {
                 continue; // invisible cannot occlude
             }
-            int32_t otherZIndex = atoi(other->GetAttr(UiAttr::ZINDEX).c_str());
-            if (otherZIndex < myZIndex) {
-                continue; // only higher z-index matters (spec R-2)
-            }
-            if (otherZIndex == myZIndex && (myIndex < 0 || static_cast<int64_t>(idx) < myIndex)) {
-                continue; // same z-index: only widgets drawn later occlude (ADR-4)
+            const auto otherHostWindowId = other->GetAttr(UiAttr::HOST_WINDOW_ID);
+            if (otherHostWindowId != myHostWindowId) {
+                // Cross-window: the stacking relation between windows is decided by the window
+                // layer only. Widget z-index is only defined between siblings of one container
+                // and is not comparable across windows.
+                const int32_t otherWindowLayer =
+                    driver.GetWindowLayer(atoi(otherHostWindowId.c_str()), myDisplayId);
+                if (otherWindowLayer <= myWindowLayer) {
+                    continue;
+                }
+            } else {
+                // Same window: a transparent/none hit-test behavior does not block siblings,
+                // the touch event passes through and the widget does not occlude.
+                const auto hitTestBehavior = other->GetAttr(UiAttr::HITTESTBEHAVIOR);
+                if (hitTestBehavior == "HitTestMode.Transparent" || hitTestBehavior == "HitTestMode.None") {
+                    continue;
+                }
+                int32_t otherZIndex = atoi(other->GetAttr(UiAttr::ZINDEX).c_str());
+                if (otherZIndex < myZIndex) {
+                    continue; // only higher z-index matters
+                }
+                if (otherZIndex == myZIndex && (myIndex < 0 || static_cast<int64_t>(idx) < myIndex)) {
+                    continue; // same z-index: only widgets drawn later occlude
+                }
             }
             if (RectAlgorithm::IsInnerPoint(other->GetBounds(), center)
                 || RectAlgorithm::IsPointOnEdge(other->GetBounds(), center)) {
@@ -2232,7 +2253,6 @@ static void RegisterExtensionHandler()
             }
         }
 
-        // 9. Not occluded
         out.resultValue_ = true;
     }
 

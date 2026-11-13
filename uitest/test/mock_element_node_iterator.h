@@ -43,6 +43,7 @@ namespace OHOS::uitest {
         bool clip = false;
         int32_t zIndex = 0;
         int visibleOverride = -1; // -1: derive from bounds; 0/1: explicit visible value
+        std::string hitTestBehavior = "HitTestMode.Default";
     };
 
     static void StringSplit(const string &str, const char split, std::vector<string> &res)
@@ -105,6 +106,9 @@ namespace OHOS::uitest {
         }
         if (obj.find("zIndex") != obj.end()) {
             eleRoot.zIndex = std::stoi(obj["zIndex"].get<std::string>());
+        }
+        if (obj.find("hitTestBehavior") != obj.end()) {
+            eleRoot.hitTestBehavior = obj["hitTestBehavior"];
         }
         if (obj.find("visible") != obj.end()) {
             eleRoot.visibleOverride = (obj["visible"] == "true") ? 1 : 0;
@@ -262,6 +266,7 @@ namespace OHOS::uitest {
             widget.SetAttr(UiAttr::ORIGBOUNDS, boundStream.str());
             widget.SetAttr(UiAttr::HASHCODE, GenerateNodeHashCode(element));
             widget.SetAttr(UiAttr::ZINDEX, std::to_string(element.zIndex));
+            widget.SetAttr(UiAttr::HITTESTBEHAVIOR, element.hitTestBehavior);
             if (element.visibleOverride >= 0) {
                 widget.SetAttr(UiAttr::VISIBLE, element.visibleOverride == 1 ? "true" : "false");
             } else {

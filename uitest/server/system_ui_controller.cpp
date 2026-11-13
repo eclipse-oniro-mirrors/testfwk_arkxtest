@@ -618,6 +618,7 @@ namespace OHOS::uitest {
                     win.GetWindowId(), win.IsActive(), win.IsFocused(), win.GetWindowLayer(), win.GetDisplayId());
                 Window winWrapper{win.GetWindowId()};
                 winWrapper.bounds_ = winRectInScreen;
+                winWrapper.windowLayer_ = win.GetWindowLayer();
                 InflateWindowInfo(win, winWrapper, needAbilityInfo);
                 winWrapper.displayId_ = win.GetDisplayId();
                 UpdateWindowAttrs(winWrapper, overplays);

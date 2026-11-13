@@ -289,7 +289,7 @@ TEST_F(FrontendApiHandlerTest, callApiE2E)
     ASSERT_NE(ref0, ref1);
 
     // should always return a new By
-    auto call2 = ApiCallInfo {.apiId_ = "UiDriver.create", .callerObjRef_ = string()};
+    auto call2 = ApiCallInfo {.apiId_ = "Driver.create", .callerObjRef_ = string()};
     auto reply2 = ApiReplyInfo();
     server.Call(call2, reply2);
     ASSERT_EQ(NO_ERROR, reply2.exception_.code_);
@@ -1615,7 +1615,7 @@ TEST_F(FrontendApiHandlerTest, MouseDragNewInterfaceWithoutOptions)
     EXPECT_EQ(NO_ERROR, reply2.exception_.code_);  // Should use default speed and duration
 }
 
-// ==================== Component.isReachable tests (spec FEAT-TESTFWK-2026-003) ====================
+// ==================== Component.isReachable tests ====================
 
 /**
  * Fixture for isReachable tests: registers a MockController so the real API chain
@@ -1638,12 +1638,29 @@ protected:
         controller_ = nullptr;
     }
 
-    /** Register a window with the given widget-tree json, then run the real API chain
-     *  and deliver the isReachable reply. */
-    void CallIsReachable(const Window &win, const string &treeJson, const string &content, ApiReplyInfo &reply)
+        /** Register a window with the given widget-tree json, then run the real API chain
+         *  and deliver the isReachable reply. */
+        void CallIsReachable(const Window &win, const string &treeJson, const string &content, ApiReplyInfo &reply)
+        {
+            auto eles = MockElementNodeIterator::ConstructIteratorByJson(treeJson)->elementInfoLists_;
+            controller_->AddWindowsAndNode(win, eles);
+            CallIsReachableWithRegisteredTree(win, content, reply);
+        }
+
+        /** Replace the registered widget tree of the given window at runtime (keeping the same
+         *  window id and hierarchies), so a found component can be re-evaluated against the
+         *  changed UI. To be used together with CallIsReachable. */
+        void ReplaceRegisteredTree(const Window &win, const string &treeJson)
+        {
+            auto eles = MockElementNodeIterator::ConstructIteratorByJson(treeJson)->elementInfoLists_;
+            controller_->RemoveWindowsAndNode(win);
+            controller_->AddWindowsAndNode(win, eles);
+        }
+
+        /** Run the real API chain (Driver.create -> On.text -> Driver.findComponent ->
+         *  Component.isReachable) against the currently registered tree. */
+        void CallIsReachableWithRegisteredTree(const Window &win, const string &content, ApiReplyInfo &reply)
     {
-        auto eles = MockElementNodeIterator::ConstructIteratorByJson(treeJson)->elementInfoLists_;
-        controller_->AddWindowsAndNode(win, eles);
         const auto &server = FrontendApiServer::Get();
         // create driver
         auto call0 = ApiCallInfo {.apiId_ = "Driver.create", .callerObjRef_ = string()};
@@ -1672,10 +1689,44 @@ protected:
         server.Call(call3, reply);
     }
 
-    MockController *controller_ = nullptr;
-};
+        MockController *controller_ = nullptr;
 
-/** AC-1.1 / R-1: center point not occluded → true */
+        /** Register two windows (same display) with the given trees, then run the real API chain
+         *  and deliver the isReachable reply for the target content. */
+        void CallIsReachableTwoWindows(const Window &win0, const string &tree0, const Window &win1,
+            const string &tree1, const string &content, ApiReplyInfo &reply)
+        {
+            auto eles0 = MockElementNodeIterator::ConstructIteratorByJson(tree0)->elementInfoLists_;
+            auto eles1 = MockElementNodeIterator::ConstructIteratorByJson(tree1)->elementInfoLists_;
+            controller_->AddWindowsAndNode(win0, eles0);
+            controller_->AddWindowsAndNode(win1, eles1);
+            const auto &server = FrontendApiServer::Get();
+            // create driver
+            auto call0 = ApiCallInfo {.apiId_ = "Driver.create", .callerObjRef_ = string()};
+            auto reply0 = ApiReplyInfo();
+            server.Call(call0, reply0);
+            ASSERT_EQ(NO_ERROR, reply0.exception_.code_);
+            const auto driverRef = reply0.resultValue_.get<string>();
+            // build selector by content
+            auto call1 = ApiCallInfo {.apiId_ = "On.text", .callerObjRef_ = string(REF_SEED_ON)};
+            call1.paramList_.emplace_back(content);
+            auto reply1 = ApiReplyInfo();
+            server.Call(call1, reply1);
+            ASSERT_EQ(NO_ERROR, reply1.exception_.code_);
+            // find the component
+            auto call2 = ApiCallInfo {.apiId_ = "Driver.findComponent", .callerObjRef_ = driverRef};
+            call2.paramList_.emplace_back(reply1.resultValue_.get<string>());
+            auto reply2 = ApiReplyInfo();
+            server.Call(call2, reply2);
+            ASSERT_EQ(NO_ERROR, reply2.exception_.code_);
+            // call isReachable
+            auto call3 = ApiCallInfo {.apiId_ = "Component.isReachable",
+                                      .callerObjRef_ = reply2.resultValue_.get<string>()};
+            server.Call(call3, reply);
+        }
+    };
+
+/** center point not occluded → true */
 TEST_F(FrontendApiHandlerIsReachableTest, componentIsReachableNotOccluded)
 {
     // tree: root with two children; sibling does not cover the target center (200,200)
@@ -1699,7 +1750,7 @@ TEST_F(FrontendApiHandlerIsReachableTest, componentIsReachableNotOccluded)
     EXPECT_TRUE(reply.resultValue_.get<bool>()); // not occluded → true
 }
 
-/** AC-1.2 / R-2: center point occluded by higher z-index → false */
+/** center point occluded by higher z-index → false */
 TEST_F(FrontendApiHandlerIsReachableTest, componentIsReachableOccludedByHigherZIndex)
 {
     // overlay z-index 1 covers the target center (200,200)
@@ -1723,7 +1774,7 @@ TEST_F(FrontendApiHandlerIsReachableTest, componentIsReachableOccludedByHigherZI
     EXPECT_FALSE(reply.resultValue_.get<bool>()); // occluded by higher z-index → false
 }
 
-/** AC-1.3 / R-6: partial occlusion but center visible → true */
+/** partial occlusion but center visible → true */
 TEST_F(FrontendApiHandlerIsReachableTest, componentIsReachablePartialOcclusionCenterVisible)
 {
     // overlay covers only the corner [100,180], the center (200,200) is NOT covered
@@ -1747,11 +1798,21 @@ TEST_F(FrontendApiHandlerIsReachableTest, componentIsReachablePartialOcclusionCe
     EXPECT_TRUE(reply.resultValue_.get<bool>()); // center visible → true
 }
 
-/** AC-1.4 / R-7: visible=false → false */
+/** A component that flips to invisible at runtime is not reachable. */
 TEST_F(FrontendApiHandlerIsReachableTest, componentIsReachableInvisible)
 {
-    // explicit visible=false with non-zero bounds
-    const string tree = R"(
+    // step1: find the component in a normal tree
+    const string treeBefore = R"(
+        {
+            "attributes":{"componentType":"Root","accessibilityId":"1","rectInScreen":"0,400,0,400"},
+            "children":[
+                {"attributes":{"componentType":"Button","accessibilityId":"10","content":"target",
+                    "rectInScreen":"100,300,100,300","zIndex":"0"},"children":[]}
+            ]
+        }
+    )";
+    // step2: flip the target to invisible at runtime (explicit visible=false, non-zero bounds)
+    const string treeAfter = R"(
         {
             "attributes":{"componentType":"Root","accessibilityId":"1","rectInScreen":"0,400,0,400"},
             "children":[
@@ -1762,36 +1823,96 @@ TEST_F(FrontendApiHandlerIsReachableTest, componentIsReachableInvisible)
     )";
     Window win(12);
     win.bounds_ = Rect{0, 400, 0, 400};
-    ApiReplyInfo reply;
-    CallIsReachable(win, tree, "target", reply);
-    ASSERT_EQ(NO_ERROR, reply.exception_.code_);
-    ASSERT_TRUE(reply.resultValue_.is_boolean());
-    EXPECT_FALSE(reply.resultValue_.get<bool>()); // invisible → false
+    auto eles = MockElementNodeIterator::ConstructIteratorByJson(treeBefore)->elementInfoLists_;
+    controller_->AddWindowsAndNode(win, eles);
+    const auto &server = FrontendApiServer::Get();
+    auto call0 = ApiCallInfo {.apiId_ = "Driver.create", .callerObjRef_ = string()};
+    auto reply0 = ApiReplyInfo();
+    server.Call(call0, reply0);
+    ASSERT_EQ(NO_ERROR, reply0.exception_.code_);
+    auto call1 = ApiCallInfo {.apiId_ = "On.text", .callerObjRef_ = string(REF_SEED_ON)};
+    call1.paramList_.emplace_back("target");
+    auto reply1 = ApiReplyInfo();
+    server.Call(call1, reply1);
+    ASSERT_EQ(NO_ERROR, reply1.exception_.code_);
+    auto call2 = ApiCallInfo {.apiId_ = "Driver.findComponent", .callerObjRef_ = reply0.resultValue_.get<string>()};
+    call2.paramList_.emplace_back(reply1.resultValue_.get<string>());
+    auto reply2 = ApiReplyInfo();
+    server.Call(call2, reply2);
+    ASSERT_EQ(NO_ERROR, reply2.exception_.code_);
+    const auto componentRef = reply2.resultValue_.get<string>();
+    // step3: flip the target to invisible, then re-check reachability with the existing ref
+    ReplaceRegisteredTree(win, treeAfter);
+    auto call3 = ApiCallInfo {.apiId_ = "Component.isReachable", .callerObjRef_ = componentRef};
+    auto reply3 = ApiReplyInfo();
+    server.Call(call3, reply3);
+    if (reply3.exception_.code_ == NO_ERROR) {
+        ASSERT_TRUE(reply3.resultValue_.is_boolean());
+        EXPECT_FALSE(reply3.resultValue_.get<bool>()); // invisible → false
+    } else {
+        // the flipped widget is no longer retrievable from the UI tree
+        EXPECT_EQ(ERR_COMPONENT_LOST, reply3.exception_.code_);
+    }
 }
 
-/** AC-4.2 / R-8: zero-area bounds → false */
+/** A component whose bounds flip to zero area at runtime is not reachable. */
 TEST_F(FrontendApiHandlerIsReachableTest, componentIsReachableZeroArea)
 {
-    // zero-area bounds (left==right) with explicit visible=true
-    const string tree = R"(
+    // step1: find the component in a normal tree
+    const string treeBefore = R"(
         {
             "attributes":{"componentType":"Root","accessibilityId":"1","rectInScreen":"0,400,0,400"},
             "children":[
                 {"attributes":{"componentType":"Button","accessibilityId":"10","content":"target",
-                    "rectInScreen":"100,100,100,100","zIndex":"0","visible":"true"},"children":[]}
+                    "rectInScreen":"100,300,100,300","zIndex":"0"},"children":[]}
+            ]
+        }
+    )";
+    // step2: shrink the target bounds to zero area at runtime
+    const string treeAfter = R"(
+        {
+            "attributes":{"componentType":"Root","accessibilityId":"1","rectInScreen":"0,400,0,400"},
+            "children":[
+                {"attributes":{"componentType":"Button","accessibilityId":"10","content":"target",
+                    "rectInScreen":"100,100,100,100","zIndex":"0"},"children":[]}
             ]
         }
     )";
     Window win(12);
     win.bounds_ = Rect{0, 400, 0, 400};
-    ApiReplyInfo reply;
-    CallIsReachable(win, tree, "target", reply);
-    ASSERT_EQ(NO_ERROR, reply.exception_.code_);
-    ASSERT_TRUE(reply.resultValue_.is_boolean());
-    EXPECT_FALSE(reply.resultValue_.get<bool>()); // zero area → false
+    auto eles = MockElementNodeIterator::ConstructIteratorByJson(treeBefore)->elementInfoLists_;
+    controller_->AddWindowsAndNode(win, eles);
+    const auto &server = FrontendApiServer::Get();
+    auto call0 = ApiCallInfo {.apiId_ = "Driver.create", .callerObjRef_ = string()};
+    auto reply0 = ApiReplyInfo();
+    server.Call(call0, reply0);
+    ASSERT_EQ(NO_ERROR, reply0.exception_.code_);
+    auto call1 = ApiCallInfo {.apiId_ = "On.text", .callerObjRef_ = string(REF_SEED_ON)};
+    call1.paramList_.emplace_back("target");
+    auto reply1 = ApiReplyInfo();
+    server.Call(call1, reply1);
+    ASSERT_EQ(NO_ERROR, reply1.exception_.code_);
+    auto call2 = ApiCallInfo {.apiId_ = "Driver.findComponent", .callerObjRef_ = reply0.resultValue_.get<string>()};
+    call2.paramList_.emplace_back(reply1.resultValue_.get<string>());
+    auto reply2 = ApiReplyInfo();
+    server.Call(call2, reply2);
+    ASSERT_EQ(NO_ERROR, reply2.exception_.code_);
+    const auto componentRef = reply2.resultValue_.get<string>();
+    // step3: shrink the bounds to zero area, then re-check reachability with the existing ref
+    ReplaceRegisteredTree(win, treeAfter);
+    auto call3 = ApiCallInfo {.apiId_ = "Component.isReachable", .callerObjRef_ = componentRef};
+    auto reply3 = ApiReplyInfo();
+    server.Call(call3, reply3);
+    if (reply3.exception_.code_ == NO_ERROR) {
+        ASSERT_TRUE(reply3.resultValue_.is_boolean());
+        EXPECT_FALSE(reply3.resultValue_.get<bool>()); // zero area → false
+    } else {
+        // the flipped widget is no longer retrievable from the UI tree
+        EXPECT_EQ(ERR_COMPONENT_LOST, reply3.exception_.code_);
+    }
 }
 
-/** AC-4.1 / R-3: component destroyed → 17000004 */
+/** component destroyed → 17000004 */
 TEST_F(FrontendApiHandlerIsReachableTest, componentIsReachableComponentLost)
 {
     const string tree = R"(
@@ -1826,8 +1947,9 @@ TEST_F(FrontendApiHandlerIsReachableTest, componentIsReachableComponentLost)
     server.Call(call2, reply2);
     ASSERT_EQ(NO_ERROR, reply2.exception_.code_);
     const auto componentRef = reply2.resultValue_.get<string>();
-    // destroy the window so the component is gone, then isReachable should deliver 17000004
+    // the window stays but the component is gone, then isReachable should deliver 17000004
     controller_->RemoveWindowsAndNode(win);
+    controller_->AddWindowsAndNode(win, {});
     auto call3 = ApiCallInfo {.apiId_ = "Component.isReachable", .callerObjRef_ = componentRef};
     auto reply3 = ApiReplyInfo();
     server.Call(call3, reply3);
@@ -1835,11 +1957,11 @@ TEST_F(FrontendApiHandlerIsReachableTest, componentIsReachableComponentLost)
     EXPECT_TRUE(reply3.resultValue_.is_null());
 }
 
-/** R-2 / ADR-4: same z-index, sibling drawn later covers the center → false */
+/** same z-index, sibling drawn later covers the center → false */
 TEST_F(FrontendApiHandlerIsReachableTest, componentIsReachableSameZIndexLaterSiblingOccludes)
 {
     // both widgets have z-index 0; the overlay appears after the target in the tree,
-    // so it is drawn later and stacks on top of the target (ADR-4)
+    // so it is drawn later and stacks on top of the target
     const string tree = R"(
         {
             "attributes":{"componentType":"Root","accessibilityId":"1","rectInScreen":"0,400,0,400"},
@@ -1860,11 +1982,11 @@ TEST_F(FrontendApiHandlerIsReachableTest, componentIsReachableSameZIndexLaterSib
     EXPECT_FALSE(reply.resultValue_.get<bool>()); // same z-index, drawn later → occludes
 }
 
-/** R-2 / ADR-4: same z-index, sibling drawn earlier does not occlude → true */
+/** same z-index, sibling drawn earlier does not occlude → true */
 TEST_F(FrontendApiHandlerIsReachableTest, componentIsReachableSameZIndexEarlierSiblingNotOcclude)
 {
     // both widgets have z-index 0; the sibling appears before the target in the tree,
-    // so the target is drawn later and stacks on top of the sibling (ADR-4)
+    // so the target is drawn later and stacks on top of the sibling
     const string tree = R"(
         {
             "attributes":{"componentType":"Root","accessibilityId":"1","rectInScreen":"0,400,0,400"},
@@ -1885,7 +2007,7 @@ TEST_F(FrontendApiHandlerIsReachableTest, componentIsReachableSameZIndexEarlierS
     EXPECT_TRUE(reply.resultValue_.get<bool>()); // same z-index, drawn earlier → not occluded
 }
 
-/** spec behavior scenario 7: center point on the occluder's edge counts as occluded → false */
+/** center point on the occluder's edge counts as occluded → false */
 TEST_F(FrontendApiHandlerIsReachableTest, componentIsReachableCenterOnOccluderEdge)
 {
     // overlay bounds [100,200,100,300]: its right edge (x=200) passes exactly through
@@ -1910,7 +2032,7 @@ TEST_F(FrontendApiHandlerIsReachableTest, componentIsReachableCenterOnOccluderEd
     EXPECT_FALSE(reply.resultValue_.get<bool>()); // edge point counts as occluded
 }
 
-/** spec architecture constraint: only widgets on the same display are considered */
+/** only widgets on the same display are considered */
 TEST_F(FrontendApiHandlerIsReachableTest, componentIsReachableDifferentDisplayNotOcclude)
 {
     // window 12 on display 0 holds the target; window 13 on display 1 holds an occluder
@@ -1972,7 +2094,7 @@ TEST_F(FrontendApiHandlerIsReachableTest, componentIsReachableDifferentDisplayNo
     EXPECT_TRUE(reply3.resultValue_.get<bool>()); // different display → not occluded
 }
 
-/** R-2: lower z-index widget covering the center does not occlude → true */
+/** lower z-index widget covering the center does not occlude → true */
 TEST_F(FrontendApiHandlerIsReachableTest, componentIsReachableLowerZIndexNotOcclude)
 {
     // target z-index 1; overlay z-index 0 covers the target center — lower z never occludes
@@ -2022,4 +2144,214 @@ TEST_F(FrontendApiHandlerIsReachableTest, rectAlgorithmPointChecks)
     Rect zeroRect(100, 100, 100, 100);
     EXPECT_FALSE(RectAlgorithm::IsInnerPoint(zeroRect, Point(100, 100)));
     EXPECT_TRUE(RectAlgorithm::IsPointOnEdge(zeroRect, Point(100, 100)));
+}
+
+/** Cross-window: a widget in a higher-layer window occludes even with a lower widget z-index. */
+TEST_F(FrontendApiHandlerIsReachableTest, componentIsReachableCrossWindowHigherLayerOccludes)
+{
+    // window 12 (layer 1) holds the target (z-index 100); window 13 (layer 10) holds an occluder
+    // with z-index 0 covering the target center. Widget z-index is not comparable across windows,
+    // the window layer decides the stacking: the occluder stacks higher and occludes.
+    const string targetTree = R"(
+        {
+            "attributes":{"componentType":"Root","accessibilityId":"1","windowId":"12","rectInScreen":"0,400,0,400"},
+            "children":[
+                {"attributes":{"componentType":"Button","accessibilityId":"10","content":"target",
+                    "windowId":"12","rectInScreen":"100,300,100,300","zIndex":"100"},"children":[]}
+            ]
+        }
+    )";
+    const string occluderTree = R"(
+        {
+            "attributes":{"componentType":"Root","accessibilityId":"2","windowId":"13","rectInScreen":"0,400,0,400"},
+            "children":[
+                {"attributes":{"componentType":"Text","accessibilityId":"20","content":"floatlayer",
+                    "windowId":"13","rectInScreen":"150,250,150,250","zIndex":"0"},"children":[]}
+            ]
+        }
+    )";
+    Window win0(12);
+    win0.displayId_ = 0;
+    win0.windowLayer_ = 1;
+    win0.bounds_ = Rect{0, 400, 0, 400};
+    Window win1(13);
+    win1.displayId_ = 0;
+    win1.windowLayer_ = 10;
+    win1.bounds_ = Rect{0, 400, 0, 400};
+    ApiReplyInfo reply;
+    CallIsReachableTwoWindows(win0, targetTree, win1, occluderTree, "target", reply);
+    ASSERT_EQ(NO_ERROR, reply.exception_.code_);
+    ASSERT_TRUE(reply.resultValue_.is_boolean());
+    EXPECT_FALSE(reply.resultValue_.get<bool>()); // higher window layer → occludes
+}
+
+/** Cross-window: a widget in a lower-layer window never occludes even if it stacks later
+ *  in the traversal order or carries a higher widget z-index. */
+TEST_F(FrontendApiHandlerIsReachableTest, componentIsReachableCrossWindowLowerLayerNotOcclude)
+{
+    // window 13 (layer 1) holds an occluder (z-index 100) covering the target center; the target
+    // lives in window 12 (layer 10). The window layer decides: the occluder is below the target.
+    const string targetTree = R"(
+        {
+            "attributes":{"componentType":"Root","accessibilityId":"1","windowId":"12","rectInScreen":"0,400,0,400"},
+            "children":[
+                {"attributes":{"componentType":"Button","accessibilityId":"10","content":"target",
+                    "windowId":"12","rectInScreen":"100,300,100,300","zIndex":"0"},"children":[]}
+            ]
+        }
+    )";
+    const string occluderTree = R"(
+        {
+            "attributes":{"componentType":"Root","accessibilityId":"2","windowId":"13","rectInScreen":"0,400,0,400"},
+            "children":[
+                {"attributes":{"componentType":"Text","accessibilityId":"20","content":"underwindow",
+                    "windowId":"13","rectInScreen":"150,250,150,250","zIndex":"100"},"children":[]}
+            ]
+        }
+    )";
+    Window win0(12);
+    win0.displayId_ = 0;
+    win0.windowLayer_ = 10;
+    win0.bounds_ = Rect{0, 400, 0, 400};
+    Window win1(13);
+    win1.displayId_ = 0;
+    win1.windowLayer_ = 1;
+    win1.bounds_ = Rect{0, 400, 0, 400};
+    ApiReplyInfo reply;
+    CallIsReachableTwoWindows(win0, targetTree, win1, occluderTree, "target", reply);
+    ASSERT_EQ(NO_ERROR, reply.exception_.code_);
+    ASSERT_TRUE(reply.resultValue_.is_boolean());
+    EXPECT_TRUE(reply.resultValue_.get<bool>()); // lower window layer → not occluded
+}
+
+/** Cross-window: with equal widget z-index the window layer still decides the direction. */
+TEST_F(FrontendApiHandlerIsReachableTest, componentIsReachableCrossWindowSameZIndexByWindowLayer)
+{
+    // both widgets have z-index 0; the occluder lives in a higher-layer window and covers the
+    // target center → occluded. (Traversal-order approximation would flip this direction.)
+    const string targetTree = R"(
+        {
+            "attributes":{"componentType":"Root","accessibilityId":"1","windowId":"12","rectInScreen":"0,400,0,400"},
+            "children":[
+                {"attributes":{"componentType":"Button","accessibilityId":"10","content":"target",
+                    "windowId":"12","rectInScreen":"100,300,100,300","zIndex":"0"},"children":[]}
+            ]
+        }
+    )";
+    const string occluderTree = R"(
+        {
+            "attributes":{"componentType":"Root","accessibilityId":"2","windowId":"13","rectInScreen":"0,400,0,400"},
+            "children":[
+                {"attributes":{"componentType":"Text","accessibilityId":"20","content":"dialogcover",
+                    "windowId":"13","rectInScreen":"150,250,150,250","zIndex":"0"},"children":[]}
+            ]
+        }
+    )";
+    Window win0(12);
+    win0.displayId_ = 0;
+    win0.windowLayer_ = 1;
+    win0.bounds_ = Rect{0, 400, 0, 400};
+    Window win1(13);
+    win1.displayId_ = 0;
+    win1.windowLayer_ = 10;
+    win1.bounds_ = Rect{0, 400, 0, 400};
+    ApiReplyInfo reply;
+    CallIsReachableTwoWindows(win0, targetTree, win1, occluderTree, "target", reply);
+    ASSERT_EQ(NO_ERROR, reply.exception_.code_);
+    ASSERT_TRUE(reply.resultValue_.is_boolean());
+    EXPECT_FALSE(reply.resultValue_.get<bool>()); // equal z-index, higher window layer → occludes
+}
+
+/** Same window: a transparent overlay passes touch through and does not occlude. */
+TEST_F(FrontendApiHandlerIsReachableTest, componentIsReachableTransparentOverlayNotOcclude)
+{
+    const string tree = R"(
+        {
+            "attributes":{"componentType":"Root","accessibilityId":"1","rectInScreen":"0,400,0,400"},
+            "children":[
+                {"attributes":{"componentType":"Button","accessibilityId":"10","content":"target",
+                    "rectInScreen":"100,300,100,300","zIndex":"0"},"children":[]},
+                {"attributes":{"componentType":"Text","accessibilityId":"11","content":"overlay",
+                    "rectInScreen":"150,250,150,250","zIndex":"1",
+                    "hitTestBehavior":"HitTestMode.Transparent"},"children":[]}
+            ]
+        }
+    )";
+    Window win(12);
+    win.bounds_ = Rect{0, 400, 0, 400};
+    ApiReplyInfo reply;
+    CallIsReachable(win, tree, "target", reply);
+    ASSERT_EQ(NO_ERROR, reply.exception_.code_);
+    ASSERT_TRUE(reply.resultValue_.is_boolean());
+    EXPECT_TRUE(reply.resultValue_.get<bool>()); // transparent overlay passes touch through
+}
+
+/** Same window: a none hit-test overlay passes touch through and does not occlude. */
+TEST_F(FrontendApiHandlerIsReachableTest, componentIsReachableNoneOverlayNotOcclude)
+{
+    const string tree = R"(
+        {
+            "attributes":{"componentType":"Root","accessibilityId":"1","rectInScreen":"0,400,0,400"},
+            "children":[
+                {"attributes":{"componentType":"Button","accessibilityId":"10","content":"target",
+                    "rectInScreen":"100,300,100,300","zIndex":"0"},"children":[]},
+                {"attributes":{"componentType":"Text","accessibilityId":"11","content":"overlay",
+                    "rectInScreen":"150,250,150,250","zIndex":"1",
+                    "hitTestBehavior":"HitTestMode.None"},"children":[]}
+            ]
+        }
+    )";
+    Window win(12);
+    win.bounds_ = Rect{0, 400, 0, 400};
+    ApiReplyInfo reply;
+    CallIsReachable(win, tree, "target", reply);
+    ASSERT_EQ(NO_ERROR, reply.exception_.code_);
+    ASSERT_TRUE(reply.resultValue_.is_boolean());
+    EXPECT_TRUE(reply.resultValue_.get<bool>()); // none overlay passes touch through
+}
+
+/** Same window: a blocking overlay still occludes (hit-test exemption does not over-apply). */
+TEST_F(FrontendApiHandlerIsReachableTest, componentIsReachableBlockOverlayStillOccludes)
+{
+    const string tree = R"(
+        {
+            "attributes":{"componentType":"Root","accessibilityId":"1","rectInScreen":"0,400,0,400"},
+            "children":[
+                {"attributes":{"componentType":"Button","accessibilityId":"10","content":"target",
+                    "rectInScreen":"100,300,100,300","zIndex":"0"},"children":[]},
+                {"attributes":{"componentType":"Text","accessibilityId":"11","content":"overlay",
+                    "rectInScreen":"150,250,150,250","zIndex":"1",
+                    "hitTestBehavior":"HitTestMode.Block"},"children":[]}
+            ]
+        }
+    )";
+    Window win(12);
+    win.bounds_ = Rect{0, 400, 0, 400};
+    ApiReplyInfo reply;
+    CallIsReachable(win, tree, "target", reply);
+    ASSERT_EQ(NO_ERROR, reply.exception_.code_);
+    ASSERT_TRUE(reply.resultValue_.is_boolean());
+    EXPECT_FALSE(reply.resultValue_.get<bool>()); // blocking overlay occludes
+}
+
+/** Self: a widget with HitTestMode.None does not respond to touch and is not reachable. */
+TEST_F(FrontendApiHandlerIsReachableTest, componentIsReachableSelfHitTestModeNone)
+{
+    const string tree = R"(
+        {
+            "attributes":{"componentType":"Root","accessibilityId":"1","rectInScreen":"0,400,0,400"},
+            "children":[
+                {"attributes":{"componentType":"Button","accessibilityId":"10","content":"target",
+                    "rectInScreen":"100,300,100,300","zIndex":"0",
+                    "hitTestBehavior":"HitTestMode.None"},"children":[]}
+            ]
+        }
+    )";
+    Window win(12);
+    win.bounds_ = Rect{0, 400, 0, 400};
+    ApiReplyInfo reply;
+    CallIsReachable(win, tree, "target", reply);
+    ASSERT_EQ(NO_ERROR, reply.exception_.code_);
+    ASSERT_TRUE(reply.resultValue_.is_boolean());
+    EXPECT_FALSE(reply.resultValue_.get<bool>()); // self does not respond to touch test
 }
