@@ -1657,6 +1657,41 @@ protected:
             controller_->AddWindowsAndNode(win, eles);
         }
 
+        /** Register the tree on the window and run Driver.create -> On.text('target') ->
+         *  Driver.findComponent against it, returning the found component ref. */
+        string FindTargetComponent(const Window &win, const string &treeJson)
+        {
+            auto eles = MockElementNodeIterator::ConstructIteratorByJson(treeJson)->elementInfoLists_;
+            controller_->AddWindowsAndNode(win, eles);
+            const auto &server = FrontendApiServer::Get();
+            auto call0 = ApiCallInfo {.apiId_ = "Driver.create", .callerObjRef_ = string()};
+            auto reply0 = ApiReplyInfo();
+            server.Call(call0, reply0);
+            EXPECT_EQ(NO_ERROR, reply0.exception_.code_);
+            auto call1 = ApiCallInfo {.apiId_ = "On.text", .callerObjRef_ = string(REF_SEED_ON)};
+            call1.paramList_.emplace_back("target");
+            auto reply1 = ApiReplyInfo();
+            server.Call(call1, reply1);
+            EXPECT_EQ(NO_ERROR, reply1.exception_.code_);
+            auto call2 = ApiCallInfo {.apiId_ = "Driver.findComponent", .callerObjRef_ = reply0.resultValue_.get<string>()};
+            call2.paramList_.emplace_back(reply1.resultValue_.get<string>());
+            auto reply2 = ApiReplyInfo();
+            server.Call(call2, reply2);
+            EXPECT_EQ(NO_ERROR, reply2.exception_.code_);
+            return reply2.resultValue_.get<string>();
+        }
+
+        /** Replace the registered tree at runtime and re-check reachability of the
+         *  previously found component against the changed UI. */
+        void FlipTreeAndCheckReachable(const Window &win, const string &treeAfter,
+            const string &componentRef, ApiReplyInfo &reply)
+        {
+            ReplaceRegisteredTree(win, treeAfter);
+            const auto &server = FrontendApiServer::Get();
+            auto call = ApiCallInfo {.apiId_ = "Component.isReachable", .callerObjRef_ = componentRef};
+            server.Call(call, reply);
+        }
+
         /** Run the real API chain (Driver.create -> On.text -> Driver.findComponent ->
          *  Component.isReachable) against the currently registered tree. */
         void CallIsReachableWithRegisteredTree(const Window &win, const string &content, ApiReplyInfo &reply)
@@ -1823,35 +1858,15 @@ TEST_F(FrontendApiHandlerIsReachableTest, componentIsReachableInvisible)
     )";
     Window win(12);
     win.bounds_ = Rect{0, 400, 0, 400};
-    auto eles = MockElementNodeIterator::ConstructIteratorByJson(treeBefore)->elementInfoLists_;
-    controller_->AddWindowsAndNode(win, eles);
-    const auto &server = FrontendApiServer::Get();
-    auto call0 = ApiCallInfo {.apiId_ = "Driver.create", .callerObjRef_ = string()};
-    auto reply0 = ApiReplyInfo();
-    server.Call(call0, reply0);
-    ASSERT_EQ(NO_ERROR, reply0.exception_.code_);
-    auto call1 = ApiCallInfo {.apiId_ = "On.text", .callerObjRef_ = string(REF_SEED_ON)};
-    call1.paramList_.emplace_back("target");
-    auto reply1 = ApiReplyInfo();
-    server.Call(call1, reply1);
-    ASSERT_EQ(NO_ERROR, reply1.exception_.code_);
-    auto call2 = ApiCallInfo {.apiId_ = "Driver.findComponent", .callerObjRef_ = reply0.resultValue_.get<string>()};
-    call2.paramList_.emplace_back(reply1.resultValue_.get<string>());
-    auto reply2 = ApiReplyInfo();
-    server.Call(call2, reply2);
-    ASSERT_EQ(NO_ERROR, reply2.exception_.code_);
-    const auto componentRef = reply2.resultValue_.get<string>();
-    // step3: flip the target to invisible, then re-check reachability with the existing ref
-    ReplaceRegisteredTree(win, treeAfter);
-    auto call3 = ApiCallInfo {.apiId_ = "Component.isReachable", .callerObjRef_ = componentRef};
-    auto reply3 = ApiReplyInfo();
-    server.Call(call3, reply3);
-    if (reply3.exception_.code_ == NO_ERROR) {
-        ASSERT_TRUE(reply3.resultValue_.is_boolean());
-        EXPECT_FALSE(reply3.resultValue_.get<bool>()); // invisible → false
+    const auto componentRef = FindTargetComponent(win, treeBefore);
+    ApiReplyInfo replyAfter;
+    FlipTreeAndCheckReachable(win, treeAfter, componentRef, replyAfter);
+    if (replyAfter.exception_.code_ == NO_ERROR) {
+        ASSERT_TRUE(replyAfter.resultValue_.is_boolean());
+        EXPECT_FALSE(replyAfter.resultValue_.get<bool>()); // invisible → false
     } else {
         // the flipped widget is no longer retrievable from the UI tree
-        EXPECT_EQ(ERR_COMPONENT_LOST, reply3.exception_.code_);
+        EXPECT_EQ(ERR_COMPONENT_LOST, replyAfter.exception_.code_);
     }
 }
 
@@ -1880,35 +1895,15 @@ TEST_F(FrontendApiHandlerIsReachableTest, componentIsReachableZeroArea)
     )";
     Window win(12);
     win.bounds_ = Rect{0, 400, 0, 400};
-    auto eles = MockElementNodeIterator::ConstructIteratorByJson(treeBefore)->elementInfoLists_;
-    controller_->AddWindowsAndNode(win, eles);
-    const auto &server = FrontendApiServer::Get();
-    auto call0 = ApiCallInfo {.apiId_ = "Driver.create", .callerObjRef_ = string()};
-    auto reply0 = ApiReplyInfo();
-    server.Call(call0, reply0);
-    ASSERT_EQ(NO_ERROR, reply0.exception_.code_);
-    auto call1 = ApiCallInfo {.apiId_ = "On.text", .callerObjRef_ = string(REF_SEED_ON)};
-    call1.paramList_.emplace_back("target");
-    auto reply1 = ApiReplyInfo();
-    server.Call(call1, reply1);
-    ASSERT_EQ(NO_ERROR, reply1.exception_.code_);
-    auto call2 = ApiCallInfo {.apiId_ = "Driver.findComponent", .callerObjRef_ = reply0.resultValue_.get<string>()};
-    call2.paramList_.emplace_back(reply1.resultValue_.get<string>());
-    auto reply2 = ApiReplyInfo();
-    server.Call(call2, reply2);
-    ASSERT_EQ(NO_ERROR, reply2.exception_.code_);
-    const auto componentRef = reply2.resultValue_.get<string>();
-    // step3: shrink the bounds to zero area, then re-check reachability with the existing ref
-    ReplaceRegisteredTree(win, treeAfter);
-    auto call3 = ApiCallInfo {.apiId_ = "Component.isReachable", .callerObjRef_ = componentRef};
-    auto reply3 = ApiReplyInfo();
-    server.Call(call3, reply3);
-    if (reply3.exception_.code_ == NO_ERROR) {
-        ASSERT_TRUE(reply3.resultValue_.is_boolean());
-        EXPECT_FALSE(reply3.resultValue_.get<bool>()); // zero area → false
+    const auto componentRef = FindTargetComponent(win, treeBefore);
+    ApiReplyInfo replyAfter;
+    FlipTreeAndCheckReachable(win, treeAfter, componentRef, replyAfter);
+    if (replyAfter.exception_.code_ == NO_ERROR) {
+        ASSERT_TRUE(replyAfter.resultValue_.is_boolean());
+        EXPECT_FALSE(replyAfter.resultValue_.get<bool>()); // zero area → false
     } else {
         // the flipped widget is no longer retrievable from the UI tree
-        EXPECT_EQ(ERR_COMPONENT_LOST, reply3.exception_.code_);
+        EXPECT_EQ(ERR_COMPONENT_LOST, replyAfter.exception_.code_);
     }
 }
 
@@ -1926,27 +1921,8 @@ TEST_F(FrontendApiHandlerIsReachableTest, componentIsReachableComponentLost)
     )";
     Window win(12);
     win.bounds_ = Rect{0, 400, 0, 400};
-    auto eles = MockElementNodeIterator::ConstructIteratorByJson(tree)->elementInfoLists_;
-    controller_->AddWindowsAndNode(win, eles);
+    const auto componentRef = FindTargetComponent(win, tree);
     const auto &server = FrontendApiServer::Get();
-    // create driver
-    auto call0 = ApiCallInfo {.apiId_ = "Driver.create", .callerObjRef_ = string()};
-    auto reply0 = ApiReplyInfo();
-    server.Call(call0, reply0);
-    ASSERT_EQ(NO_ERROR, reply0.exception_.code_);
-    const auto driverRef = reply0.resultValue_.get<string>();
-    // build selector and find component
-    auto call1 = ApiCallInfo {.apiId_ = "On.text", .callerObjRef_ = string(REF_SEED_ON)};
-    call1.paramList_.emplace_back("target");
-    auto reply1 = ApiReplyInfo();
-    server.Call(call1, reply1);
-    ASSERT_EQ(NO_ERROR, reply1.exception_.code_);
-    auto call2 = ApiCallInfo {.apiId_ = "Driver.findComponent", .callerObjRef_ = driverRef};
-    call2.paramList_.emplace_back(reply1.resultValue_.get<string>());
-    auto reply2 = ApiReplyInfo();
-    server.Call(call2, reply2);
-    ASSERT_EQ(NO_ERROR, reply2.exception_.code_);
-    const auto componentRef = reply2.resultValue_.get<string>();
     // the window stays but the component is gone, then isReachable should deliver 17000004
     controller_->RemoveWindowsAndNode(win);
     controller_->AddWindowsAndNode(win, {});
