@@ -2147,6 +2147,203 @@ static void RegisterExtensionHandler()
     server.AddHandler("Driver.OpenAamsEvent", genericOpenAamsEventHandler);
 }
 
+    /** Whether the hit-test behavior of the widget passes touch through to siblings.
+     *  Transparent / None never block anything; BLOCK_DESCENDANTS does not respond itself
+     *  and only blocks its own descendants, so it also passes touch through to siblings. */
+    static bool IsHitTestPassthrough(const Widget &widget)
+    {
+        const auto behavior = widget.GetAttr(UiAttr::HITTESTBEHAVIOR);
+        return behavior == "HitTestMode.Transparent" || behavior == "HitTestMode.None" ||
+            behavior == "HitTestMode.BLOCK_DESCENDANTS";
+    }
+
+    /** Whether one hierarchy strictly contains the other as ancestor/descendant kin.
+     *  The hierarchy string is the comma-joined path from the tree root, so kinship means
+     *  one path is a strict prefix of the other at a ',' boundary ("ROOT,1" vs "ROOT,1,0"). */
+    static bool IsAncestorHierarchy(const string &maybeAncestor, const string &maybeDescendant)
+    {
+        if (maybeAncestor.size() >= maybeDescendant.size()) {
+            return false;
+        }
+        return maybeDescendant.compare(0, maybeAncestor.size(), maybeAncestor) == 0 &&
+            maybeDescendant.at(maybeAncestor.size()) == ',';
+    }
+
+    /** Whether the occluder widget covers the given center point (edge-inclusive). */
+    static bool CoversCenterPoint(const Widget &occluder, const Point &center)
+    {
+        return RectAlgorithm::IsInnerPoint(occluder.GetBounds(), center) ||
+            RectAlgorithm::IsPointOnEdge(occluder.GetBounds(), center);
+    }
+
+    /** Kin (ancestor/descendant) case: stacking between kin widgets is decided by the
+     *  hit-test behavior instead of the z-index. A kin widget occludes the target only
+     *  when its hit-test behavior blocks the opposite direction of the kin relation:
+     *  - Block blocks children, siblings and ancestors (both directions);
+     *  - BLOCK_HIERARCHY blocks the parent node (occludes only as a descendant);
+     *  - BLOCK_DESCENDANTS blocks the descendants (occludes only as an ancestor);
+     *  - Default / Transparent / None never block kin widgets (the touch hit on a child
+     *    bubbles to the ancestor, and an ancestor never blocks its own descendants). */
+    static bool KinOccludes(const Widget &other, const Point &center, bool otherIsAncestor)
+    {
+        const auto behavior = other.GetAttr(UiAttr::HITTESTBEHAVIOR);
+        bool blocksTarget = false;
+        if (behavior == "HitTestMode.Block") {
+            blocksTarget = true;
+        } else if (behavior == "HitTestMode.BLOCK_HIERARCHY") {
+            blocksTarget = !otherIsAncestor;
+        } else if (behavior == "HitTestMode.BLOCK_DESCENDANTS") {
+            blocksTarget = otherIsAncestor;
+        }
+        return blocksTarget && CoversCenterPoint(other, center);
+    }
+
+    /** Cross-window case: the window layer decides the stacking relation between windows,
+     *  widget z-index is only defined between siblings of one container and is not
+     *  comparable across windows. */
+    static bool CrossWindowOccludes(const Widget &other, const Point &center, int32_t myWindowLayer,
+        int32_t myDisplayId, const UiDriver &driver)
+    {
+        const int32_t otherWindowLayer =
+            driver.GetWindowLayer(atoi(other.GetAttr(UiAttr::HOST_WINDOW_ID).c_str()), myDisplayId);
+        return otherWindowLayer > myWindowLayer && CoversCenterPoint(other, center);
+    }
+
+    /** Same-window case for non-kin widgets: a higher z-index occludes; with equal z-index
+     *  only widgets drawn later occlude; a transparent/none/block-descendants hit-test
+     *  behavior passes touch through. Kin widgets are handled by KinOccludes instead. */
+    static bool SameWindowOccludes(const Widget &other, const Point &center, int32_t myZIndex,
+        int64_t myIndex, int64_t otherIndex)
+    {
+        if (IsHitTestPassthrough(other)) {
+            return false;
+        }
+        const int32_t otherZIndex = atoi(other.GetAttr(UiAttr::ZINDEX).c_str());
+        if (otherZIndex < myZIndex) {
+            return false;
+        }
+        if (otherZIndex == myZIndex && (myIndex < 0 || otherIndex < myIndex)) {
+            return false;
+        }
+        return CoversCenterPoint(other, center);
+    }
+
+    /** Locate the index of the snapshot widget in the traversal result by hierarchy and
+     *  host window id. Within one window the traversal order follows the drawing order:
+     *  widgets visited later are drawn later and stack on top. */
+    static int64_t LocateSelfIndex(const vector<unique_ptr<Widget>> &widgets, const Widget &snapshot)
+    {
+        const auto hierarchy = snapshot.GetHierarchy();
+        const auto hostWindowId = snapshot.GetAttr(UiAttr::HOST_WINDOW_ID);
+        for (size_t idx = 0; idx < widgets.size(); idx++) {
+            const auto &widget = widgets[idx];
+            if (widget->GetHierarchy() == hierarchy
+                && widget->GetAttr(UiAttr::HOST_WINDOW_ID) == hostWindowId) {
+                return static_cast<int64_t>(idx);
+            }
+        }
+        LOG_W("isReachable: failed to locate widget %{public}s in traversal result, "
+            "same-zindex occlusion check will be skipped", hierarchy.c_str());
+        return -1;
+    }
+
+    /** Check the self state of the snapshot (visibility / hit-test behavior / bounds area).
+     *  Fill the reply and return true if the reachability result is already decided.
+     *  None and BLOCK_DESCENDANTS widgets never respond to the touch test themselves. */
+    static bool CheckSelfStateAndReply(const Widget &snapshot, ApiReplyInfo &out)
+    {
+        if (!snapshot.IsVisible()) {
+            out.resultValue_ = false;
+            return true;
+        }
+        const auto selfBehavior = snapshot.GetAttr(UiAttr::HITTESTBEHAVIOR);
+        if (selfBehavior == "HitTestMode.None" || selfBehavior == "HitTestMode.BLOCK_DESCENDANTS") {
+            out.resultValue_ = false;
+            return true;
+        }
+        if (snapshot.GetBounds().GetArea() <= 0) {
+            out.resultValue_ = false;
+            return true;
+        }
+        return false;
+    }
+
+    /** Same-window candidate: kin (ancestor/descendant) widgets are judged by the
+     *  hit-test behavior (KinOccludes), non-kin widgets by the z-index stacking. */
+    static bool SameWindowCandidateOccludes(const Widget &other, const Widget &self,
+        const Point &center, int64_t myIndex, int64_t otherIndex)
+    {
+        const auto &myHierarchy = self.GetHierarchy();
+        const auto &otherHierarchy = other.GetHierarchy();
+        const bool otherIsAncestor = IsAncestorHierarchy(otherHierarchy, myHierarchy);
+        if (otherIsAncestor || IsAncestorHierarchy(myHierarchy, otherHierarchy)) {
+            return KinOccludes(other, center, otherIsAncestor);
+        }
+        const int32_t myZIndex = atoi(self.GetAttr(UiAttr::ZINDEX).c_str());
+        return SameWindowOccludes(other, center, myZIndex, myIndex, otherIndex);
+    }
+
+    /** Whether any visible same-display widget in the traversal result occludes the
+     *  target center. Candidates from other windows are judged by the window layer. */
+    static bool IsOccludedByAny(const vector<unique_ptr<Widget>> &widgets, const Widget &self,
+        const Point &center, int32_t myWindowLayer, int64_t myIndex, const UiDriver &driver)
+    {
+        const auto &myHostWindowId = self.GetAttr(UiAttr::HOST_WINDOW_ID);
+        for (size_t idx = 0; idx < widgets.size(); idx++) {
+            const auto &other = widgets[idx];
+            if (static_cast<int64_t>(idx) == myIndex || other->GetDisplayId() != self.GetDisplayId() ||
+                !other->IsVisible()) {
+                continue;
+            }
+            if (other->GetAttr(UiAttr::HOST_WINDOW_ID) == myHostWindowId) {
+                if (SameWindowCandidateOccludes(*other, self, center, myIndex,
+                    static_cast<int64_t>(idx))) {
+                    return true;
+                }
+                continue;
+            }
+            if (CrossWindowOccludes(*other, center, myWindowLayer, self.GetDisplayId(), driver)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** Checks whether the center point of a component is reachable (not occluded). */
+    static void ComponentIsReachableHandler(const ApiCallInfo &in, ApiReplyInfo &out)
+    {
+        auto &image = GetBackendObject<Widget>(in.callerObjRef_);
+        auto &driver = GetBoundUiDriver(in.callerObjRef_);
+
+        auto snapshot = driver.RetrieveWidget(image, out.exception_);
+        if (out.exception_.code_ != NO_ERROR) {
+            out.resultValue_ = nullptr;
+            return;
+        }
+        // Copy the snapshot before any further traversal: the pointer returned by
+        // RetrieveWidget refers to an element of UiDriver::visitWidgets_, which is
+        // cleared and refilled by FindWidgetsCoveringPoint below.
+        const Widget snapshotCopy = *snapshot;
+        if (CheckSelfStateAndReply(snapshotCopy, out)) {
+            return;
+        }
+        const auto bounds = snapshotCopy.GetBounds();
+        Point center(bounds.GetCenterX(), bounds.GetCenterY());
+        const auto myDisplayId = snapshotCopy.GetDisplayId();
+        const auto myHostWindowId = snapshotCopy.GetAttr(UiAttr::HOST_WINDOW_ID);
+        const int32_t myWindowLayer = driver.GetWindowLayer(atoi(myHostWindowId.c_str()), myDisplayId);
+
+        vector<unique_ptr<Widget>> allWidgets;
+        driver.FindWidgetsCoveringPoint(center, myDisplayId, allWidgets, out.exception_);
+        if (out.exception_.code_ != NO_ERROR) {
+            out.resultValue_ = nullptr;
+            return;
+        }
+        const int64_t myIndex = LocateSelfIndex(allWidgets, snapshotCopy);
+        out.resultValue_ = !IsOccludedByAny(allWidgets, snapshotCopy, center, myWindowLayer,
+            myIndex, driver);
+    }
+
     static void RegisterUiComponentAttrGetters()
     {
         auto &server = FrontendApiServer::Get();
@@ -2168,6 +2365,7 @@ static void RegisterExtensionHandler()
         server.AddHandler("Component.getBoundsCenter", GenericComponentAttrGetter<UiAttr::BOUNDSCENTER>);
         server.AddHandler("Component.getDisplayId", GenericComponentAttrGetter<UiAttr::DISPLAY_ID>);
         server.AddHandler("Component.getOriginalText", GenericComponentAttrGetter<UiAttr::ORIGINALTEXT, true>);
+        server.AddHandler("Component.isReachable", ComponentIsReachableHandler);
     }
 
     static void RegisterUiComponentClickOperation()

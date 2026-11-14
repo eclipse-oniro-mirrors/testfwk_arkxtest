@@ -22,6 +22,8 @@
 #include "frontend_api_handler.h"
 #undef private
 #include "dummy_controller.h"
+#include "mock_element_node_iterator.h"
+#include "mock_controller.h"
 #include "widget_selector.h"
 #include "ui_driver.h"
 

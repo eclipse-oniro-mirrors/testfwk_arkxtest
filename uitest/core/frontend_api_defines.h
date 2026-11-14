@@ -499,6 +499,7 @@ namespace OHOS::uitest {
         {"Component.pinchOut", "(float):void", false, false},
         {"Component.pinchIn", "(float):void", false, false},
         {"Component.getOriginalText", "():string", false, false, true},
+        {"Component.isReachable", "():bool", false, false},
     };
     constexpr FrontEndClassDef COMPONENT_DEF = {
         "Component",

@@ -317,6 +317,7 @@ export class Component {
     private native getBoundsCenterSync(): Point;
     private native getDisplayIdSync(): int;
     private native getOriginalTextSync(): string;
+    private native isReachableSync(): boolean;
 
     click(): Promise<void> {
         let promise = new Promise<void>((resolve: (value: PromiseLike<void>) => void, reject: (error: Error) => void) => {
@@ -723,6 +724,20 @@ export class Component {
         });
         return promise;
     }
+    isReachable(): Promise<boolean> {
+        let promise = new Promise<boolean>((resolve: (value: boolean) => void, reject: (error: Error) => void) => {
+        let promise1 = taskpool.execute((): boolean => this.isReachableSync());
+            promise1.then((e: Any) => {
+                let value : boolean = e as boolean;
+                resolve(value);
+            }, (err: Error): void => {
+                let br = err as BusinessError<void>;
+                reject(br);
+            });
+        });
+        return promise;
+    }
+
   }
   
   export class UiWindow {

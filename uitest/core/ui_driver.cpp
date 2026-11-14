@@ -319,6 +319,20 @@ namespace OHOS::uitest {
         return CheckRetrievedWidget(widget, visitWidgets_, targetWidgetsIndex_, err);
     }
 
+    int32_t UiDriver::GetWindowLayer(int32_t windowId, int32_t displayId) const
+    {
+        auto cacheIter = displayToWindowCacheMap_.find(displayId);
+        if (cacheIter == displayToWindowCacheMap_.end()) {
+            return -1;
+        }
+        for (const auto &windowCache : cacheIter->second) {
+            if (windowCache.window_.id_ == windowId) {
+                return windowCache.window_.windowLayer_;
+            }
+        }
+        return -1;
+    }
+
     void UiDriver::TriggerKey(const KeyAction &key, const UiOpArgs &opt, ApiCallErr &error, int32_t displayId)
     {
         if (!CheckStatus(false, error)) {
@@ -411,6 +425,36 @@ namespace OHOS::uitest {
             // at sometime, more than one widgets are found, add the node index to the description
             rev.emplace_back(move(image));
             index++;
+        }
+    }
+
+    void UiDriver::FindWidgetsCoveringPoint(const Point &point, int32_t displayId,
+        vector<unique_ptr<Widget>> &rev, ApiCallErr &err)
+    {
+        visitWidgets_.clear();
+        targetWidgetsIndex_.clear();
+        auto dm = displayToWindowCacheMap_.find(displayId);
+        if (dm == displayToWindowCacheMap_.end()) {
+            err = ApiCallErr(ERR_INTERNAL, "No window cache for the display");
+            return;
+        }
+        WidgetSelector selector(true);
+        selector.SetWantMulti(true);
+        for (auto &curWinCache : dm->second) {
+            const auto &winBounds = curWinCache.window_.bounds_;
+            if (!RectAlgorithm::IsInnerPoint(winBounds, point) &&
+                !RectAlgorithm::IsPointOnEdge(winBounds, point)) {
+                continue;
+            }
+            if (curWinCache.widgetIterator_ == nullptr &&
+                !uiController_->GetWidgetsInWindow(curWinCache.window_, curWinCache.widgetIterator_, mode_)) {
+                continue;
+            }
+            selector.Select(curWinCache.window_, *curWinCache.widgetIterator_, visitWidgets_, targetWidgetsIndex_);
+        }
+        for (auto targetIndex : targetWidgetsIndex_) {
+            auto image = CloneFreeWidget(visitWidgets_[targetIndex], selector.Describe());
+            rev.emplace_back(move(image));
         }
     }
 

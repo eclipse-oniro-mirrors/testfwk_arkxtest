@@ -41,6 +41,9 @@ namespace OHOS::uitest {
         int parentIndex = -1;
         std::vector<int> childIndexVec;
         bool clip = false;
+        int32_t zIndex = 0;
+        int visibleOverride = -1; // -1: derive from bounds; 0/1: explicit visible value
+        std::string hitTestBehavior = "HitTestMode.Default";
     };
 
     static void StringSplit(const string &str, const char split, std::vector<string> &res)
@@ -59,47 +62,47 @@ namespace OHOS::uitest {
         }
     }
 
+    /** Read a json string field into the mock element member, if present. */
+    inline void ReadStringField(const json &obj, const char *key,
+        std::string MockAccessibilityElementInfo::*field, MockAccessibilityElementInfo &info)
+    {
+        if (obj.find(key) != obj.end()) {
+            info.*field = obj[key];
+        }
+    }
+
+    /** Read a json "true"/"false" field into the mock element member, if present. */
+    inline void ReadBoolField(const json &obj, const char *key,
+        bool MockAccessibilityElementInfo::*field, MockAccessibilityElementInfo &info)
+    {
+        if (obj.find(key) != obj.end()) {
+            info.*field = obj[key] == "true";
+        }
+    }
+
     static MockAccessibilityElementInfo WrapperJsonToElement(const json &obj)
     {
         MockAccessibilityElementInfo eleRoot;
-        if (obj.find("accessibilityId") != obj.end()) {
-            eleRoot.accessibilityId = obj["accessibilityId"];
-        }
-        if (obj.find("inspectorKey") != obj.end()) {
-            eleRoot.inspectorKey = obj["inspectorKey"];
-        }
-        if (obj.find("content") != obj.end()) {
-            eleRoot.content = obj["content"];
-        }
-        if (obj.find("componentType") != obj.end()) {
-            eleRoot.componentType = obj["componentType"];
-        }
-        if (obj.find("bundleName") != obj.end()) {
-            eleRoot.bundleName = obj["bundleName"];
-        }
-        if (obj.find("hierarchy") != obj.end()) {
-            eleRoot.hierarchy = obj["hierarchy"];
-        }
-        if (obj.find("enabled") != obj.end()) {
-            eleRoot.enabled = obj["enabled"] == "true" ? true : false;
-        }
-        if (obj.find("focused") != obj.end()) {
-            eleRoot.focused = obj["focused"] == "true" ? true : false;
-        }
-        if (obj.find("selected") != obj.end()) {
-            eleRoot.selected = obj["selected"] == "true" ? true : false;
-        }
-        if (obj.find("checkable") != obj.end()) {
-            eleRoot.checkable = obj["checkable"] == "true" ? true : false;
-        }
-        if (obj.find("checked") != obj.end()) {
-            eleRoot.checked = obj["checked"] == "true" ? true : false;
-        }
-        if (obj.find("windowId") != obj.end()) {
-            eleRoot.windowId = obj["windowId"];
-        }
+        ReadStringField(obj, "accessibilityId", &MockAccessibilityElementInfo::accessibilityId, eleRoot);
+        ReadStringField(obj, "inspectorKey", &MockAccessibilityElementInfo::inspectorKey, eleRoot);
+        ReadStringField(obj, "content", &MockAccessibilityElementInfo::content, eleRoot);
+        ReadStringField(obj, "componentType", &MockAccessibilityElementInfo::componentType, eleRoot);
+        ReadStringField(obj, "bundleName", &MockAccessibilityElementInfo::bundleName, eleRoot);
+        ReadStringField(obj, "windowId", &MockAccessibilityElementInfo::windowId, eleRoot);
+        ReadStringField(obj, "hitTestBehavior", &MockAccessibilityElementInfo::hitTestBehavior, eleRoot);
+        ReadBoolField(obj, "enabled", &MockAccessibilityElementInfo::enabled, eleRoot);
+        ReadBoolField(obj, "focused", &MockAccessibilityElementInfo::focused, eleRoot);
+        ReadBoolField(obj, "selected", &MockAccessibilityElementInfo::selected, eleRoot);
+        ReadBoolField(obj, "checkable", &MockAccessibilityElementInfo::checkable, eleRoot);
+        ReadBoolField(obj, "checked", &MockAccessibilityElementInfo::checked, eleRoot);
         if (obj.find("clip") != obj.end()) {
             eleRoot.clip = (obj["clip"] == "true");
+        }
+        if (obj.find("zIndex") != obj.end()) {
+            eleRoot.zIndex = std::stoi(obj["zIndex"].get<std::string>());
+        }
+        if (obj.find("visible") != obj.end()) {
+            eleRoot.visibleOverride = (obj["visible"] == "true") ? 1 : 0;
         }
         if (obj.find("rectInScreen") != obj.end()) {
             // 12,12,12,12
@@ -253,8 +256,14 @@ namespace OHOS::uitest {
             widget.SetAttr(UiAttr::HOST_WINDOW_ID, element.windowId);
             widget.SetAttr(UiAttr::ORIGBOUNDS, boundStream.str());
             widget.SetAttr(UiAttr::HASHCODE, GenerateNodeHashCode(element));
-            widget.SetAttr(UiAttr::VISIBLE,
-                           nodeOriginRect.GetHeight() > 0 && nodeOriginRect.GetWidth() > 0 ? "true" : "false");
+            widget.SetAttr(UiAttr::ZINDEX, std::to_string(element.zIndex));
+            widget.SetAttr(UiAttr::HITTESTBEHAVIOR, element.hitTestBehavior);
+            if (element.visibleOverride >= 0) {
+                widget.SetAttr(UiAttr::VISIBLE, element.visibleOverride == 1 ? "true" : "false");
+            } else {
+                widget.SetAttr(UiAttr::VISIBLE,
+                               nodeOriginRect.GetHeight() > 0 && nodeOriginRect.GetWidth() > 0 ? "true" : "false");
+            }
         }
         void WrapperElement(Widget &widget) override
         {

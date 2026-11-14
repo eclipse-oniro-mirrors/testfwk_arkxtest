@@ -2678,6 +2678,11 @@ static ani_boolean performComponentApiBool(ani_env *env, ani_object obj, string 
     }
     return reply_.resultValue_.get<bool>();
 }
+static ani_boolean isReachable(ani_env *env, ani_object obj)
+{
+    return performComponentApiBool(env, obj, "Component.isReachable");
+}
+
 static ani_boolean isSelected(ani_env *env, ani_object obj)
 {
     return performComponentApiBool(env, obj, "Component.isSelected");
@@ -2755,6 +2760,7 @@ static ani_boolean BindComponent(ani_env *env)
         ani_native_function{"isCheckableSync", nullptr, reinterpret_cast<void *>(isCheckable)},
         ani_native_function{"getDisplayIdSync", nullptr, reinterpret_cast<void *>(getDisplayId)},
         ani_native_function{"getOriginalTextSync", nullptr, reinterpret_cast<void *>(getOriginalText)},
+        ani_native_function{"isReachableSync", nullptr, reinterpret_cast<void *>(isReachable)},
     };
     ani_status status;
     if (ANI_OK != (status = env->Class_BindNativeMethods(cls, methods.data(), methods.size()))) {
