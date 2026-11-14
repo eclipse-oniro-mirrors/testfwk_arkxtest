@@ -2169,6 +2169,13 @@ static void RegisterExtensionHandler()
             maybeDescendant.at(maybeAncestor.size()) == ',';
     }
 
+    /** Whether the occluder widget covers the given center point (edge-inclusive). */
+    static bool CoversCenterPoint(const Widget &occluder, const Point &center)
+    {
+        return RectAlgorithm::IsInnerPoint(occluder.GetBounds(), center) ||
+            RectAlgorithm::IsPointOnEdge(occluder.GetBounds(), center);
+    }
+
     /** Kin (ancestor/descendant) case: stacking between kin widgets is decided by the
      *  hit-test behavior instead of the z-index. A kin widget occludes the target only
      *  when its hit-test behavior blocks the opposite direction of the kin relation:
@@ -2189,13 +2196,6 @@ static void RegisterExtensionHandler()
             blocksTarget = otherIsAncestor;
         }
         return blocksTarget && CoversCenterPoint(other, center);
-    }
-
-    /** Whether the occluder widget covers the given center point (edge-inclusive). */
-    static bool CoversCenterPoint(const Widget &occluder, const Point &center)
-    {
-        return RectAlgorithm::IsInnerPoint(occluder.GetBounds(), center) ||
-            RectAlgorithm::IsPointOnEdge(occluder.GetBounds(), center);
     }
 
     /** Cross-window case: the window layer decides the stacking relation between windows,
