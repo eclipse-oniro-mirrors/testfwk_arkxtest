@@ -2268,3 +2268,291 @@ TEST_F(FrontendApiHandlerIsReachableTest, componentIsReachableSelfHitTestModeNon
     ASSERT_TRUE(reply.resultValue_.is_boolean());
     EXPECT_FALSE(reply.resultValue_.get<bool>()); // self does not respond to touch test
 }
+
+/** Same window: a default hit-test child covering the parent center does not occlude it.
+ *  This is the common Button() { Text() } custom-content shape observed on real devices:
+ *  the Text child shares the Button bounds, has the same z-index and is drawn later, but a
+ *  Default child never blocks the ancestor (the touch hit bubbles up), so the Button stays
+ *  reachable. */
+TEST_F(FrontendApiHandlerIsReachableTest, componentIsReachableDefaultChildNotOcclude)
+{
+    const string tree = R"(
+        {
+            "attributes":{"componentType":"Root", "accessibilityId":"1", "rectInScreen":"0, 400, 0, 400"},
+            "children":[
+                {"attributes":{"componentType":"Button", "accessibilityId":"10", "content":"target",
+                    "rectInScreen":"100, 300, 100, 300", "zIndex":"0"}, "children":[
+                    {"attributes":{"componentType":"Text", "accessibilityId":"11", "content":"label",
+                        "rectInScreen":"100, 300, 100, 300", "zIndex":"0"}, "children":[]}
+                ]}
+            ]
+        }
+    )";
+    Window win = MakeTestWindow(testWindowId, testDisplayId, 0);
+    ApiReplyInfo reply;
+    CallIsReachable(win, tree, "target", reply);
+    ASSERT_EQ(NO_ERROR, reply.exception_.code_);
+    ASSERT_TRUE(reply.resultValue_.is_boolean());
+    EXPECT_TRUE(reply.resultValue_.get<bool>()); // default child bubbles touch to the ancestor
+}
+
+/** Same window: a Block child covering the parent center occludes it (Block blocks ancestors). */
+TEST_F(FrontendApiHandlerIsReachableTest, componentIsReachableBlockChildOccludes)
+{
+    const string tree = R"(
+        {
+            "attributes":{"componentType":"Root", "accessibilityId":"1", "rectInScreen":"0, 400, 0, 400"},
+            "children":[
+                {"attributes":{"componentType":"Button", "accessibilityId":"10", "content":"target",
+                    "rectInScreen":"100, 300, 100, 300", "zIndex":"0"}, "children":[
+                    {"attributes":{"componentType":"Text", "accessibilityId":"11", "content":"label",
+                        "rectInScreen":"100, 300, 100, 300", "zIndex":"0",
+                        "hitTestBehavior":"HitTestMode.Block"}, "children":[]}
+                ]}
+            ]
+        }
+    )";
+    Window win = MakeTestWindow(testWindowId, testDisplayId, 0);
+    ApiReplyInfo reply;
+    CallIsReachable(win, tree, "target", reply);
+    ASSERT_EQ(NO_ERROR, reply.exception_.code_);
+    ASSERT_TRUE(reply.resultValue_.is_boolean());
+    EXPECT_FALSE(reply.resultValue_.get<bool>()); // block child blocks the ancestor
+}
+
+/** Same window: a BLOCK_HIERARCHY child covering the parent center occludes it
+ *  (BLOCK_HIERARCHY blocks the parent node). */
+TEST_F(FrontendApiHandlerIsReachableTest, componentIsReachableBlockHierarchyChildOccludes)
+{
+    const string tree = R"(
+        {
+            "attributes":{"componentType":"Root", "accessibilityId":"1", "rectInScreen":"0, 400, 0, 400"},
+            "children":[
+                {"attributes":{"componentType":"Button", "accessibilityId":"10", "content":"target",
+                    "rectInScreen":"100, 300, 100, 300", "zIndex":"0"}, "children":[
+                    {"attributes":{"componentType":"Text", "accessibilityId":"11", "content":"label",
+                        "rectInScreen":"100, 300, 100, 300", "zIndex":"0",
+                        "hitTestBehavior":"HitTestMode.BLOCK_HIERARCHY"}, "children":[]}
+                ]}
+            ]
+        }
+    )";
+    Window win = MakeTestWindow(testWindowId, testDisplayId, 0);
+    ApiReplyInfo reply;
+    CallIsReachable(win, tree, "target", reply);
+    ASSERT_EQ(NO_ERROR, reply.exception_.code_);
+    ASSERT_TRUE(reply.resultValue_.is_boolean());
+    EXPECT_FALSE(reply.resultValue_.get<bool>()); // block-hierarchy child blocks the parent
+}
+
+/** Same window: a BLOCK_DESCENDANTS child covering the parent center does not occlude it
+ *  (BLOCK_DESCENDANTS only disables itself and its own descendants, never the ancestors). */
+TEST_F(FrontendApiHandlerIsReachableTest, componentIsReachableBlockDescendantsChildNotOcclude)
+{
+    const string tree = R"(
+        {
+            "attributes":{"componentType":"Root", "accessibilityId":"1", "rectInScreen":"0, 400, 0, 400"},
+            "children":[
+                {"attributes":{"componentType":"Button", "accessibilityId":"10", "content":"target",
+                    "rectInScreen":"100, 300, 100, 300", "zIndex":"0"}, "children":[
+                    {"attributes":{"componentType":"Text", "accessibilityId":"11", "content":"label",
+                        "rectInScreen":"100, 300, 100, 300", "zIndex":"0",
+                        "hitTestBehavior":"HitTestMode.BLOCK_DESCENDANTS"}, "children":[]}
+                ]}
+            ]
+        }
+    )";
+    Window win = MakeTestWindow(testWindowId, testDisplayId, 0);
+    ApiReplyInfo reply;
+    CallIsReachable(win, tree, "target", reply);
+    ASSERT_EQ(NO_ERROR, reply.exception_.code_);
+    ASSERT_TRUE(reply.resultValue_.is_boolean());
+    EXPECT_TRUE(reply.resultValue_.get<bool>()); // block-descendants child never blocks ancestors
+}
+
+/** Same window: a default ancestor covering the target center never occludes it. */
+TEST_F(FrontendApiHandlerIsReachableTest, componentIsReachableDefaultAncestorNotOcclude)
+{
+    const string tree = R"(
+        {
+            "attributes":{"componentType":"Root", "accessibilityId":"1", "rectInScreen":"0, 400, 0, 400"},
+            "children":[
+                {"attributes":{"componentType":"Column", "accessibilityId":"5",
+                    "rectInScreen":"100, 300, 100, 300", "zIndex":"0"}, "children":[
+                    {"attributes":{"componentType":"Button", "accessibilityId":"10", "content":"target",
+                        "rectInScreen":"100, 300, 100, 300", "zIndex":"0"}, "children":[]}
+                ]}
+            ]
+        }
+    )";
+    Window win = MakeTestWindow(testWindowId, testDisplayId, 0);
+    ApiReplyInfo reply;
+    CallIsReachable(win, tree, "target", reply);
+    ASSERT_EQ(NO_ERROR, reply.exception_.code_);
+    ASSERT_TRUE(reply.resultValue_.is_boolean());
+    EXPECT_TRUE(reply.resultValue_.get<bool>()); // ancestors never block their own descendants
+}
+
+/** Same window: a Block ancestor covering the target center occludes it (Block blocks children). */
+TEST_F(FrontendApiHandlerIsReachableTest, componentIsReachableBlockAncestorOccludes)
+{
+    const string tree = R"(
+        {
+            "attributes":{"componentType":"Root", "accessibilityId":"1", "rectInScreen":"0, 400, 0, 400"},
+            "children":[
+                {"attributes":{"componentType":"Column", "accessibilityId":"5",
+                    "rectInScreen":"100, 300, 100, 300", "zIndex":"0",
+                    "hitTestBehavior":"HitTestMode.Block"}, "children":[
+                    {"attributes":{"componentType":"Button", "accessibilityId":"10", "content":"target",
+                        "rectInScreen":"100, 300, 100, 300", "zIndex":"0"}, "children":[]}
+                ]}
+            ]
+        }
+    )";
+    Window win = MakeTestWindow(testWindowId, testDisplayId, 0);
+    ApiReplyInfo reply;
+    CallIsReachable(win, tree, "target", reply);
+    ASSERT_EQ(NO_ERROR, reply.exception_.code_);
+    ASSERT_TRUE(reply.resultValue_.is_boolean());
+    EXPECT_FALSE(reply.resultValue_.get<bool>()); // block ancestor blocks the descendants
+}
+
+/** Same window: a BLOCK_DESCENDANTS ancestor covering the target center occludes it
+ *  (BLOCK_DESCENDANTS disables all its descendants). */
+TEST_F(FrontendApiHandlerIsReachableTest, componentIsReachableBlockDescendantsAncestorOccludes)
+{
+    const string tree = R"(
+        {
+            "attributes":{"componentType":"Root", "accessibilityId":"1", "rectInScreen":"0, 400, 0, 400"},
+            "children":[
+                {"attributes":{"componentType":"Column", "accessibilityId":"5",
+                    "rectInScreen":"100, 300, 100, 300", "zIndex":"0",
+                    "hitTestBehavior":"HitTestMode.BLOCK_DESCENDANTS"}, "children":[
+                    {"attributes":{"componentType":"Button", "accessibilityId":"10", "content":"target",
+                        "rectInScreen":"100, 300, 100, 300", "zIndex":"0"}, "children":[]}
+                ]}
+            ]
+        }
+    )";
+    Window win = MakeTestWindow(testWindowId, testDisplayId, 0);
+    ApiReplyInfo reply;
+    CallIsReachable(win, tree, "target", reply);
+    ASSERT_EQ(NO_ERROR, reply.exception_.code_);
+    ASSERT_TRUE(reply.resultValue_.is_boolean());
+    EXPECT_FALSE(reply.resultValue_.get<bool>()); // block-descendants ancestor blocks the target
+}
+
+/** Same window: a BLOCK_HIERARCHY ancestor covering the target center does not occlude it
+ *  (BLOCK_HIERARCHY blocks its own parent and lower-priority siblings, not its descendants). */
+TEST_F(FrontendApiHandlerIsReachableTest, componentIsReachableBlockHierarchyAncestorNotOcclude)
+{
+    const string tree = R"(
+        {
+            "attributes":{"componentType":"Root", "accessibilityId":"1", "rectInScreen":"0, 400, 0, 400"},
+            "children":[
+                {"attributes":{"componentType":"Column", "accessibilityId":"5",
+                    "rectInScreen":"100, 300, 100, 300", "zIndex":"0",
+                    "hitTestBehavior":"HitTestMode.BLOCK_HIERARCHY"}, "children":[
+                    {"attributes":{"componentType":"Button", "accessibilityId":"10", "content":"target",
+                        "rectInScreen":"100, 300, 100, 300", "zIndex":"0"}, "children":[]}
+                ]}
+            ]
+        }
+    )";
+    Window win = MakeTestWindow(testWindowId, testDisplayId, 0);
+    ApiReplyInfo reply;
+    CallIsReachable(win, tree, "target", reply);
+    ASSERT_EQ(NO_ERROR, reply.exception_.code_);
+    ASSERT_TRUE(reply.resultValue_.is_boolean());
+    EXPECT_TRUE(reply.resultValue_.get<bool>()); // block-hierarchy ancestor keeps descendants live
+}
+
+/** Same window: a BLOCK_DESCENDANTS sibling covering the center passes touch through
+ *  (it does not respond itself and only blocks its own descendants, so siblings stay reachable). */
+TEST_F(FrontendApiHandlerIsReachableTest, componentIsReachableBlockDescendantsSiblingNotOcclude)
+{
+    const string tree = R"(
+        {
+            "attributes":{"componentType":"Root", "accessibilityId":"1", "rectInScreen":"0, 400, 0, 400"},
+            "children":[
+                {"attributes":{"componentType":"Button", "accessibilityId":"10", "content":"target",
+                    "rectInScreen":"100, 300, 100, 300", "zIndex":"0"}, "children":[]},
+                {"attributes":{"componentType":"Text", "accessibilityId":"11", "content":"overlay",
+                    "rectInScreen":"150, 250, 150, 250", "zIndex":"1",
+                    "hitTestBehavior":"HitTestMode.BLOCK_DESCENDANTS"}, "children":[]}
+            ]
+        }
+    )";
+    Window win = MakeTestWindow(testWindowId, testDisplayId, 0);
+    ApiReplyInfo reply;
+    CallIsReachable(win, tree, "target", reply);
+    ASSERT_EQ(NO_ERROR, reply.exception_.code_);
+    ASSERT_TRUE(reply.resultValue_.is_boolean());
+    EXPECT_TRUE(reply.resultValue_.get<bool>()); // block-descendants overlay passes siblings through
+}
+
+/** Self: a widget with HitTestMode.BLOCK_DESCENDANTS does not respond to touch and is not reachable. */
+TEST_F(FrontendApiHandlerIsReachableTest, componentIsReachableSelfBlockDescendants)
+{
+    const string tree = R"(
+        {
+            "attributes":{"componentType":"Root", "accessibilityId":"1", "rectInScreen":"0, 400, 0, 400"},
+            "children":[
+                {"attributes":{"componentType":"Button", "accessibilityId":"10", "content":"target",
+                    "rectInScreen":"100, 300, 100, 300", "zIndex":"0",
+                    "hitTestBehavior":"HitTestMode.BLOCK_DESCENDANTS"}, "children":[]}
+            ]
+        }
+    )";
+    Window win = MakeTestWindow(testWindowId, testDisplayId, 0);
+    ApiReplyInfo reply;
+    CallIsReachable(win, tree, "target", reply);
+    ASSERT_EQ(NO_ERROR, reply.exception_.code_);
+    ASSERT_TRUE(reply.resultValue_.is_boolean());
+    EXPECT_FALSE(reply.resultValue_.get<bool>()); // self does not respond to touch test
+}
+
+/** Regression for the dangling snapshot pointer: the widget pointer returned by
+ *  RetrieveWidget refers to an element of UiDriver::visitWidgets_, which is cleared and
+ *  refilled by FindWidgetsCoveringPoint. Here the higher-layer decoy window (visited first)
+ *  realigns the refilled vector, so the stale snapshot slot holds the decoy widget with
+ *  z-index 5 instead of the target (z-index 0). With the stale data the same-zindex overlay
+ *  in the target window would compare against z-index 5 and wrongly pass; the correct
+ *  snapshot (z-index 0, later same-zindex overlay covering the center) must be occluded. */
+TEST_F(FrontendApiHandlerIsReachableTest, componentIsReachableStaleSnapshotAcrossWindows)
+{
+    const string targetTree = R"(
+        {
+            "attributes":{"componentType":"Root", "accessibilityId":"1", "windowId":"12",
+                "rectInScreen":"0, 400, 0, 400"},
+            "children":[
+                {"attributes":{"componentType":"Button", "accessibilityId":"10", "content":"target",
+                    "windowId":"12", "rectInScreen":"100, 300, 100, 300", "zIndex":"0"}, "children":[]},
+                {"attributes":{"componentType":"Text", "accessibilityId":"11", "content":"overlay",
+                    "windowId":"12", "rectInScreen":"150, 250, 150, 250", "zIndex":"0"}, "children":[]},
+                {"attributes":{"componentType":"Text", "accessibilityId":"12", "content":"extra1",
+                    "windowId":"12", "rectInScreen":"0, 80, 0, 80", "zIndex":"0"}, "children":[]},
+                {"attributes":{"componentType":"Text", "accessibilityId":"13", "content":"extra2",
+                    "windowId":"12", "rectInScreen":"320, 400, 320, 400", "zIndex":"0"}, "children":[]}
+            ]
+        }
+    )";
+    const string decoyTree = R"(
+        {
+            "attributes":{"componentType":"Root", "accessibilityId":"2", "windowId":"13",
+                "rectInScreen":"0, 100, 0, 100"},
+            "children":[
+                {"attributes":{"componentType":"Text", "accessibilityId":"20", "content":"decoy",
+                    "windowId":"13", "rectInScreen":"0, 50, 0, 50", "zIndex":"5"}, "children":[]}
+            ]
+        }
+    )";
+    Window win0 = MakeTestWindow(testWindowId, testDisplayId, lowerWindowLayer);
+    Window win1 = MakeTestWindow(testOccluderWindowId, testDisplayId, higherWindowLayer);
+    ApiReplyInfo reply;
+    CallIsReachableTwoWindows(win0, targetTree, win1, decoyTree, "target", reply);
+    ASSERT_EQ(NO_ERROR, reply.exception_.code_);
+    ASSERT_TRUE(reply.resultValue_.is_boolean());
+    // correct answer: same-zindex overlay drawn later covers the target center → occluded
+    EXPECT_FALSE(reply.resultValue_.get<bool>());
+}
