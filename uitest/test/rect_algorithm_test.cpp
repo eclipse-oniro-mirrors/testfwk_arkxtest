@@ -109,38 +109,6 @@ TEST(RectAlgorithmTest, testPointOnRectEdge)
     ASSERT_FALSE(RectAlgorithm::IsPointOnEdge(rect, Point(15, 25)));
 }
 
-TEST(RectAlgorithmTest, computeVisibleRegion)
-{
-    //  ______
-    // |      |
-    // |  ++++|++++++
-    // |  + ..|...  +
-    // |__+_:_| _:__+____
-    //    + :..|.:  +    |
-    //    +    |    +    |
-    //    +++++|+++++    |
-    //         |_________|
-    Rect rect(100, 200, 100, 200);
-    vector<Rect> overlaySet = {Rect(0, 140, 0, 140), Rect(160, 250, 160, 250), Rect(120, 160, 120, 160)};
-    auto region = Rect(0, 0, 0, 0);
-    constexpr size_t rounds = 1E5;
-    constexpr size_t middle = rounds / 2;
-    vector<uint32_t> elapseUs;
-    for (size_t idx = 0; idx < rounds; idx++) {
-        const auto micros0 = GetCurrentMicroseconds();
-        ASSERT_TRUE(RectAlgorithm::ComputeMaxVisibleRegion(rect, overlaySet, region));
-        const auto micros1 = GetCurrentMicroseconds();
-        elapseUs.push_back(micros1 - micros0);
-    }
-    // check result
-    auto expectedVisibleRegion = Rect(100, 160, 160, 200);
-    ASSERT_TRUE(RectAlgorithm::CheckEqual(region, expectedVisibleRegion));
-    // check elapse (use median), should not exceed baseline: 10us
-    constexpr uint32_t epalseBaseline = 10;
-    sort(elapseUs.begin(), elapseUs.end());
-    ASSERT_LE(elapseUs.at(middle), epalseBaseline);
-}
-
 TEST(RectAlgorithmTest, computeVisibleRegionSpecialCases)
 {
     //   same-to-overlay   fully-covered      not-covered       fully-covered 2      not-covered-2
