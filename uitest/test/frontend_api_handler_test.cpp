@@ -2556,3 +2556,70 @@ TEST_F(FrontendApiHandlerIsReachableTest, componentIsReachableStaleSnapshotAcros
     // correct answer: same-zindex overlay drawn later covers the target center → occluded
     EXPECT_FALSE(reply.resultValue_.get<bool>());
 }
+
+/** Same window: a negative z-index overlay covering the center never occludes a z=0 target
+ *  (a lower stacking level stays below even when negative). */
+TEST_F(FrontendApiHandlerIsReachableTest, componentIsReachableNegativeZIndexOverlayNotOcclude)
+{
+    const string tree = R"(
+        {
+            "attributes":{"componentType":"Root", "accessibilityId":"1", "rectInScreen":"0, 400, 0, 400"},
+            "children":[
+                {"attributes":{"componentType":"Button", "accessibilityId":"10", "content":"target",
+                    "rectInScreen":"100, 300, 100, 300", "zIndex":"0"}, "children":[]},
+                {"attributes":{"componentType":"Text", "accessibilityId":"11", "content":"underlay",
+                    "rectInScreen":"150, 250, 150, 250", "zIndex":"-1"}, "children":[]}
+            ]
+        }
+    )";
+    Window win = MakeTestWindow(testWindowId, testDisplayId, 0);
+    ApiReplyInfo reply;
+    CallIsReachable(win, tree, "target", reply);
+    ASSERT_EQ(NO_ERROR, reply.exception_.code_);
+    ASSERT_TRUE(reply.resultValue_.is_boolean());
+    EXPECT_TRUE(reply.resultValue_.get<bool>()); // negative z-index is still the lower level
+}
+
+/** Same window: a z=0 sibling covering the center occludes a negative z-index target. */
+TEST_F(FrontendApiHandlerIsReachableTest, componentIsReachableNegativeZIndexTargetOccluded)
+{
+    const string tree = R"(
+        {
+            "attributes":{"componentType":"Root", "accessibilityId":"1", "rectInScreen":"0, 400, 0, 400"},
+            "children":[
+                {"attributes":{"componentType":"Button", "accessibilityId":"10", "content":"target",
+                    "rectInScreen":"100, 300, 100, 300", "zIndex":"-1"}, "children":[]},
+                {"attributes":{"componentType":"Text", "accessibilityId":"11", "content":"overlay",
+                    "rectInScreen":"150, 250, 150, 250", "zIndex":"0"}, "children":[]}
+            ]
+        }
+    )";
+    Window win = MakeTestWindow(testWindowId, testDisplayId, 0);
+    ApiReplyInfo reply;
+    CallIsReachable(win, tree, "target", reply);
+    ASSERT_EQ(NO_ERROR, reply.exception_.code_);
+    ASSERT_TRUE(reply.resultValue_.is_boolean());
+    EXPECT_FALSE(reply.resultValue_.get<bool>()); // the negative-z target is stacked below the sibling
+}
+
+/** Same window: with both widgets at the same negative z-index, the one drawn later occludes. */
+TEST_F(FrontendApiHandlerIsReachableTest, componentIsReachableBothNegativeSameZIndex)
+{
+    const string tree = R"(
+        {
+            "attributes":{"componentType":"Root", "accessibilityId":"1", "rectInScreen":"0, 400, 0, 400"},
+            "children":[
+                {"attributes":{"componentType":"Button", "accessibilityId":"10", "content":"target",
+                    "rectInScreen":"100, 300, 100, 300", "zIndex":"-3"}, "children":[]},
+                {"attributes":{"componentType":"Text", "accessibilityId":"11", "content":"overlay",
+                    "rectInScreen":"150, 250, 150, 250", "zIndex":"-3"}, "children":[]}
+            ]
+        }
+    )";
+    Window win = MakeTestWindow(testWindowId, testDisplayId, 0);
+    ApiReplyInfo reply;
+    CallIsReachable(win, tree, "target", reply);
+    ASSERT_EQ(NO_ERROR, reply.exception_.code_);
+    ASSERT_TRUE(reply.resultValue_.is_boolean());
+    EXPECT_FALSE(reply.resultValue_.get<bool>()); // equal negative z-index, later drawn wins
+}
