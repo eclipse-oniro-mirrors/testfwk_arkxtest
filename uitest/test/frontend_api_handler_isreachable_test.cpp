@@ -17,10 +17,7 @@
 
 #include "gtest/gtest.h"
 #include "nlohmann/json.hpp"
-// For testing private method
-#define private public
 #include "frontend_api_handler.h"
-#undef private
 #include "mock_element_node_iterator.h"
 #include "mock_controller.h"
 #include "widget_selector.h"
@@ -29,8 +26,6 @@
 using namespace OHOS::uitest;
 using namespace std;
 using namespace nlohmann;
-
-
 
 // ==================== Component.isReachable tests ====================
 
