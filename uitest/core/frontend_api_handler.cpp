@@ -2268,6 +2268,47 @@ static void RegisterExtensionHandler()
         return false;
     }
 
+    /** Same-window candidate: kin (ancestor/descendant) widgets are judged by the
+     *  hit-test behavior (KinOccludes), non-kin widgets by the z-index stacking. */
+    static bool SameWindowCandidateOccludes(const Widget &other, const Widget &self,
+        const Point &center, int64_t myIndex, int64_t otherIndex)
+    {
+        const auto &myHierarchy = self.GetHierarchy();
+        const auto &otherHierarchy = other.GetHierarchy();
+        const bool otherIsAncestor = IsAncestorHierarchy(otherHierarchy, myHierarchy);
+        if (otherIsAncestor || IsAncestorHierarchy(myHierarchy, otherHierarchy)) {
+            return KinOccludes(other, center, otherIsAncestor);
+        }
+        const int32_t myZIndex = atoi(self.GetAttr(UiAttr::ZINDEX).c_str());
+        return SameWindowOccludes(other, center, myZIndex, myIndex, otherIndex);
+    }
+
+    /** Whether any visible same-display widget in the traversal result occludes the
+     *  target center. Candidates from other windows are judged by the window layer. */
+    static bool IsOccludedByAny(const vector<unique_ptr<Widget>> &widgets, const Widget &self,
+        const Point &center, int32_t myWindowLayer, int64_t myIndex, const UiDriver &driver)
+    {
+        const auto &myHostWindowId = self.GetAttr(UiAttr::HOST_WINDOW_ID);
+        for (size_t idx = 0; idx < widgets.size(); idx++) {
+            const auto &other = widgets[idx];
+            if (static_cast<int64_t>(idx) == myIndex || other->GetDisplayId() != self.GetDisplayId() ||
+                !other->IsVisible()) {
+                continue;
+            }
+            if (other->GetAttr(UiAttr::HOST_WINDOW_ID) == myHostWindowId) {
+                if (SameWindowCandidateOccludes(*other, self, center, myIndex,
+                    static_cast<int64_t>(idx))) {
+                    return true;
+                }
+                continue;
+            }
+            if (CrossWindowOccludes(*other, center, myWindowLayer, self.GetDisplayId(), driver)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     /** Checks whether the center point of a component is reachable (not occluded). */
     static void ComponentIsReachableHandler(const ApiCallInfo &in, ApiReplyInfo &out)
     {
@@ -2288,10 +2329,8 @@ static void RegisterExtensionHandler()
         }
         const auto bounds = snapshotCopy.GetBounds();
         Point center(bounds.GetCenterX(), bounds.GetCenterY());
-        int32_t myZIndex = atoi(snapshotCopy.GetAttr(UiAttr::ZINDEX).c_str());
-        const auto myHierarchy = snapshotCopy.GetHierarchy();
-        const auto myHostWindowId = snapshotCopy.GetAttr(UiAttr::HOST_WINDOW_ID);
         const auto myDisplayId = snapshotCopy.GetDisplayId();
+        const auto myHostWindowId = snapshotCopy.GetAttr(UiAttr::HOST_WINDOW_ID);
         const int32_t myWindowLayer = driver.GetWindowLayer(atoi(myHostWindowId.c_str()), myDisplayId);
 
         vector<unique_ptr<Widget>> allWidgets;
@@ -2301,42 +2340,8 @@ static void RegisterExtensionHandler()
             return;
         }
         const int64_t myIndex = LocateSelfIndex(allWidgets, snapshotCopy);
-
-        for (size_t idx = 0; idx < allWidgets.size(); idx++) {
-            auto &other = allWidgets[idx];
-            if (static_cast<int64_t>(idx) == myIndex) {
-                continue;
-            }
-            if (other->GetDisplayId() != myDisplayId) {
-                continue;
-            }
-            if (!other->IsVisible()) {
-                continue;
-            }
-            if (other->GetAttr(UiAttr::HOST_WINDOW_ID) == myHostWindowId) {
-                const auto &otherHierarchy = other->GetHierarchy();
-                const bool otherIsAncestor = IsAncestorHierarchy(otherHierarchy, myHierarchy);
-                if (otherIsAncestor || IsAncestorHierarchy(myHierarchy, otherHierarchy)) {
-                    // kin widgets never occlude by stacking, only by blocking hit-test behavior
-                    if (KinOccludes(*other, center, otherIsAncestor)) {
-                        out.resultValue_ = false;
-                        return;
-                    }
-                    continue;
-                }
-                if (SameWindowOccludes(*other, center, myZIndex, myIndex, static_cast<int64_t>(idx))) {
-                    out.resultValue_ = false;
-                    return;
-                }
-                continue;
-            }
-            if (CrossWindowOccludes(*other, center, myWindowLayer, myDisplayId, driver)) {
-                out.resultValue_ = false;
-                return;
-            }
-        }
-
-        out.resultValue_ = true;
+        out.resultValue_ = !IsOccludedByAny(allWidgets, snapshotCopy, center, myWindowLayer,
+            myIndex, driver);
     }
 
     static void RegisterUiComponentAttrGetters()
